@@ -1,0 +1,31 @@
+[project]
+name = "llmops"
+version = "0.1.0"
+description = "Production-grade LLMOps stack for self-hosted vLLM inference"
+readme = "README.md"
+authors = [
+    { name = "Ayush Soni", email = "ayushsoni1010.work@gmail.com" }
+]
+requires-python = ">=3.12"
+dependencies = [
+    "langchain>=1.4.0",
+    "langchain-ollama>=0.3.0",
+    "langchain-openai>=1.6.2",
+    "mlflow[genai]>=3.16.0",
+    "python-dotenv>=1.2.3",
+]
+
+[project.scripts]
+llmops = "llmops:main"
+
+[build-system]
+requires = ["uv_build>=0.12.10,<0.13.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ipywidgets>=8.1.9",
+    "jupyterlab>=4.6.3",
+    "pre-commit>=4.6.2",
+    "ruff>=0.16.7",
+]
