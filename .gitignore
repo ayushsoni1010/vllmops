@@ -1,0 +1,19 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Environment variables
+.env
+
+# MLflow local tracking (use the containerised server instead)
+mlflow.db
+mlflow.db-shm
+mlflow.db-wal
+mlruns/
