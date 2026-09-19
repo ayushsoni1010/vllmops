@@ -1,0 +1,253 @@
+services:
+
+  # ── Nginx ───────────────────────────────────────────────────────────────────
+  # Network-layer entry point: TLS termination, WAF rules, and reverse proxy.
+  # Auth / rate-limiting / routing are NOT done here — they belong in LiteLLM.
+  # nginx sits on both networks: public (internet) and internal (LiteLLM).
+  nginx:
+    image: nginx:latest
+    volumes:
+      # The nginx image runs envsubst on *.template files at startup.
+      # No env vars are currently substituted here (auth moved to LiteLLM),
+      # but the template mount is kept for future TLS/WAF configuration.
+      - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template
+    ports:
+      # The single public entry point for all LLM API traffic.
+      - "8000:80"
+    networks:
+      - public    # receives traffic from clients
+      - internal  # forwards validated requests to LiteLLM
+    depends_on:
+      litellm:
+        # nginx only accepts traffic once LiteLLM has passed its health check.
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── LiteLLM AI Gateway ──────────────────────────────────────────────────────
+  # The intelligence layer between nginx and the inference backends.
+  # Responsibilities: virtual API-key auth, per-key rate limiting, model
+  # routing, automatic retry + fallback, token/cost tracking, Redis caching.
+  litellm:
+    image: ghcr.io/berriai/litellm:main-stable
+    volumes:
+      - ./litellm/config.yaml:/app/config.yaml
+    command: --config /app/config.yaml --port 4000 --num_workers 2
+    ports:
+      # Bind to localhost only — the LiteLLM UI/API is for ops, not clients.
+      - "127.0.0.1:4000:4000"
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
+      # DATABASE_URL is constructed from POSTGRES_PASSWORD so callers only
+      # need to set one secret; the host/db/user are fixed internal values.
+      - DATABASE_URL=postgresql://litellm:${POSTGRES_PASSWORD}@postgres:5432/litellm
+      # Optional cloud fallback — leave empty to disable the gpt-4o-mini route.
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "2"
+    networks:
+      - internal  # talks to vllm, redis, postgres — all on this network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # ── vLLM ────────────────────────────────────────────────────────────────────
+  # GPU-accelerated inference engine — OpenAI-compatible API.
+  # Not port-exposed to the host. Only LiteLLM can reach it on the internal
+  # network; clients never talk to vLLM directly.
+  vllm:
+    image: vllm/vllm-openai:latest
+    deploy:
+      resources:
+        limits:
+          # Cap CPU/RAM to prevent a runaway generation from starving the
+          # observability stack (prometheus, grafana) on the same host.
+          memory: 24g
+          cpus: "8"
+        reservations:
+          memory: 8g
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      --model Qwen/Qwen3-4B-Instruct-2507
+      --host 0.0.0.0
+      --port 8000
+      --dtype auto
+      --gpu-memory-utilization 0.7
+      --max-model-len 4096
+    environment:
+      - HF_TOKEN=${HF_TOKEN}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 3
+      # Allow the model to download and load into GPU memory before checks begin.
+      start_period: 300s
+    networks:
+      - internal
+    restart: on-failure
+
+  # ── Redis ────────────────────────────────────────────────────────────────────
+  # In-memory store used by LiteLLM for:
+  #   • Semantic + exact-match response caching (avoids redundant vLLM calls)
+  #   • Rate-limit counters (per virtual key, per minute/day)
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redis-data:/data
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+    networks:
+      - internal
+    restart: unless-stopped
+
+  # ── PostgreSQL ───────────────────────────────────────────────────────────────
+  # Persistent relational store for LiteLLM:
+  #   • Virtual API key registry (create / revoke / set budgets)
+  #   • Per-key usage logs (token counts, cost, latency)
+  #   • Spend limits and budget alerts
+  # LiteLLM runs Prisma schema migrations automatically on first boot.
+  postgres:
+    image: postgres:16-alpine
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=litellm
+      - POSTGRES_USER=litellm
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U litellm -d litellm"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1"
+    networks:
+      - internal
+    restart: unless-stopped
+
+  # ── Prometheus ───────────────────────────────────────────────────────────────
+  # Scrapes /metrics from both vLLM (TTFT, TPS, GPU util) and LiteLLM
+  # (request counts, error rates, token usage, spend per key/model).
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus/alerts.yml:/etc/prometheus/alerts.yml
+      - prometheus-data:/prometheus
+    command: ["--config.file=/etc/prometheus/prometheus.yml"]
+    ports:
+      # Localhost-only: Prometheus UI for ops, not exposed to LAN.
+      - "127.0.0.1:9090:9090"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+          cpus: "1"
+    networks:
+      - internal
+    restart: unless-stopped
+
+  # ── Grafana ──────────────────────────────────────────────────────────────────
+  # Dashboarding layer — queries Prometheus for both vLLM and LiteLLM metrics.
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - ./grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources
+      - grafana-data:/var/lib/grafana
+    ports:
+      # Localhost-only: Grafana UI for ops, not exposed to LAN.
+      - "127.0.0.1:3000:3000"
+    environment:
+      - GF_PROVISIONING_PATH=/etc/grafana/provisioning
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+    networks:
+      - internal
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  # ── MLflow ───────────────────────────────────────────────────────────────────
+  # Experiment tracking for the llmops CLI.
+  # The CLI connects here via MLFLOW_TRACKING_URI=http://localhost:5000 (.env).
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:latest
+    volumes:
+      - mlflow-data:/mlflow
+    ports:
+      # Localhost-only: MLflow UI for experiment review, not exposed to LAN.
+      - "127.0.0.1:5000:5000"
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --backend-store-uri sqlite:////mlflow/mlflow.db
+      --default-artifact-root file:///mlflow/artifacts
+      --cors-allowed-origins '*'
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "0.5"
+    networks:
+      - internal
+    restart: unless-stopped
+
+
+# ── Networks ──────────────────────────────────────────────────────────────────
+networks:
+  public:
+    # Internet-facing bridge. Only nginx sits here — single ingress point
+    # for all client traffic. No backend service is on this network.
+    driver: bridge
+
+  internal:
+    # Private bridge for all backend services. Containers communicate by
+    # service name. Ports published above are bound to 127.0.0.1 so they
+    # are reachable from the host but not from the LAN.
+    driver: bridge
+
+
+# ── Volumes ───────────────────────────────────────────────────────────────────
+volumes:
+  mlflow-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  redis-data:
+    driver: local
+  postgres-data:
+    driver: local
