@@ -1,0 +1,19 @@
+global:
+  scrape_interval:     5s   # how often to pull metrics from each target
+  scrape_timeout:      4s   # must be < scrape_interval
+  evaluation_interval: 30s  # how often to evaluate alerting rules
+
+rule_files:
+  - /etc/prometheus/alerts.yml
+
+scrape_configs:
+  # vLLM inference engine — exposes TTFT, TPS, KV-cache, GPU util, etc.
+  - job_name: "vllm"
+    static_configs:
+      - targets: ["vllm:8000"]
+
+  # LiteLLM AI gateway — exposes request counts, error rates, latency,
+  # token usage, and spend per model / virtual key.
+  - job_name: "litellm"
+    static_configs:
+      - targets: ["litellm:4000"]
