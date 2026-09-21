@@ -1,0 +1,15 @@
+apiVersion: 1
+providers:
+  - name: vLLM Dashboards
+    orgId: 1
+    folder: vLLM
+    type: file
+    # Prevent provisioned dashboards from being deleted via the Grafana UI.
+    # Changes must go through version control (this file + the JSON dashboards).
+    disableDeletion: true
+    updateIntervalSeconds: 10
+    # UI edits are allowed locally for iteration but won't persist after restart
+    # unless the dashboard JSON is updated on disk.
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards
