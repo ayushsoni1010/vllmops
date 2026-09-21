@@ -1,0 +1,90 @@
+# ── Model registry ─────────────────────────────────────────────────────────────
+# Each entry is a virtual model name that clients send in "model": "...".
+# LiteLLM maps it to the real backend + credentials transparently.
+model_list:
+
+  # Primary: GPU-accelerated vLLM inference node.
+  # vllm exposes an OpenAI-compatible API; we use the "openai/" prefix so
+  # LiteLLM knows to call /v1/chat/completions on the api_base.
+  - model_name: qwen3-4b
+    litellm_params:
+      model: openai/Qwen/Qwen3-4B-Instruct-2507
+      api_base: http://vllm:8000/v1
+      # vLLM on the internal network needs no API key.
+      api_key: "none"
+
+  # Local fallback: Ollama running natively on the host.
+  # host.docker.internal resolves to the host machine from inside Docker
+  # (works on Docker Desktop for Mac/Windows and Linux with --add-host).
+  - model_name: tinyllama
+    litellm_params:
+      model: ollama/tinyllama
+      api_base: http://host.docker.internal:11434
+
+  # Cloud fallback: OpenAI — used only if both GPU and local paths fail,
+  # or when a client explicitly requests a cloud model.
+  # Set OPENAI_API_KEY in .env to activate; leave empty to disable.
+  - model_name: gpt-4o-mini
+    litellm_params:
+      model: gpt-4o-mini
+      api_key: os.environ/OPENAI_API_KEY
+
+
+# ── Router ─────────────────────────────────────────────────────────────────────
+router_settings:
+  # least-busy distributes requests across healthy replicas of the same model.
+  # Switch to "latency-based" if you add multiple vLLM nodes later.
+  routing_strategy: least-busy
+
+  # Retry a failing upstream before giving up or falling back.
+  num_retries: 3
+  retry_after: 5         # seconds between retries
+
+  # Mark a backend unhealthy after this many consecutive failures,
+  # then cool it down before retrying.
+  allowed_fails: 3
+  cooldown_time: 60      # seconds
+
+  # Automatic fallback chain:
+  # if qwen3-4b (vllm GPU) is unhealthy → retry with tinyllama (Ollama host).
+  # Add "gpt-4o-mini" to the list for a cloud last-resort.
+  fallbacks:
+    - {"qwen3-4b": ["tinyllama"]}
+
+
+# ── LiteLLM runtime settings ───────────────────────────────────────────────────
+litellm_settings:
+  # Push success/failure events to Prometheus.
+  # LiteLLM exposes /metrics for Prometheus to scrape.
+  success_callback: ["prometheus"]
+  failure_callback: ["prometheus"]
+
+  # Semantic + exact-match response caching via Redis.
+  # Identical prompts served from cache without hitting vLLM.
+  cache: true
+  cache_params:
+    type: redis
+    host: redis
+    port: 6379
+
+  # Maximum seconds to wait for a response chunk from the upstream model.
+  # Set high for long-form generation (e.g. 10 000-word outputs).
+  request_timeout: 600
+
+  # Keep logs concise in production. Set to true only for local debugging.
+  set_verbose: false
+
+
+# ── General / auth settings ────────────────────────────────────────────────────
+general_settings:
+  # Master key — used to create/revoke virtual API keys via the LiteLLM API.
+  # Clients authenticate with virtual keys, not the master key directly.
+  master_key: os.environ/LITELLM_MASTER_KEY
+
+  # PostgreSQL connection for virtual key storage, usage logs, and budgets.
+  # LiteLLM runs Prisma migrations automatically on first boot.
+  database_url: os.environ/DATABASE_URL
+
+  # Persist model configuration in the database so changes made via the
+  # LiteLLM UI survive container restarts.
+  store_model_in_db: true
