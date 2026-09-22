@@ -1,0 +1,82 @@
+groups:
+  - name: vllm
+    rules:
+      - alert: VLLMDown
+        expr: up{job="vllm"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "vLLM inference engine is down"
+          description: "vLLM has been unreachable for more than 1 minute. No inference requests can be served."
+
+      - alert: VLLMHighGPUMemoryUsage
+        expr: vllm:gpu_cache_usage_perc > 0.90
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vLLM GPU KV-cache above 90%"
+          description: "GPU KV-cache utilisation is {{ humanizePercentage $value }}. Reduce max_model_len or add a GPU node."
+
+      - alert: VLLMHighQueueDepth
+        expr: vllm:num_requests_waiting > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vLLM request queue is backing up"
+          description: "{{ $value }} requests are waiting. Consider adding a second vLLM node in litellm/config.yaml."
+
+  - name: litellm
+    rules:
+      - alert: LiteLLMDown
+        expr: up{job="litellm"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "LiteLLM gateway is down"
+          description: "LiteLLM has been unreachable for more than 1 minute. All API traffic is failing."
+
+      - alert: LiteLLMHighErrorRate
+        expr: |
+          sum(rate(litellm_deployment_failure_responses[5m]))
+          /
+          (
+            sum(rate(litellm_deployment_successful_responses[5m])) +
+            sum(rate(litellm_deployment_failure_responses[5m]))
+          ) > 0.10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LiteLLM error rate above 10%"
+          description: "Error rate is {{ humanizePercentage $value }} over the last 5 minutes. Check vLLM health and fallback chain."
+
+      - alert: LiteLLMAllBackendsDown
+        expr: |
+          sum(rate(litellm_deployment_failure_responses[2m]))
+          /
+          (
+            sum(rate(litellm_deployment_successful_responses[2m])) +
+            sum(rate(litellm_deployment_failure_responses[2m]))
+          ) == 1
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "All LiteLLM backends are failing"
+          description: "100% of requests are failing — vLLM, Ollama, and cloud fallback may all be down."
+
+      - alert: LiteLLMHighP95Latency
+        expr: |
+          histogram_quantile(0.95,
+            sum by(le) (rate(litellm_request_total_latency_metric_bucket[5m]))
+          ) > 60
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "LiteLLM P95 latency above 60 s"
+          description: "P95 request latency is {{ humanizeDuration $value }}. GPU may be under heavy load."
