@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint & format
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-groups
+
+      - name: Lint (ruff check)
+        run: uv run ruff check src/
+
+      - name: Format check (ruff format)
+        run: uv run ruff format --check src/
+
+  validate-config:
+    name: Validate configs
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate docker-compose
+        run: |
+          # Substitute placeholder values so compose config can parse the file
+          export HF_TOKEN=ci
+          export LITELLM_MASTER_KEY=ci
+          export POSTGRES_PASSWORD=ci
+          export OPENAI_API_KEY=ci
+          export GRAFANA_ADMIN_PASSWORD=ci
+          # Support both v1 (docker-compose) and v2 (docker compose) CLI
+          docker compose config --quiet 2>/dev/null || docker-compose config --quiet
+
+      - name: Validate LiteLLM config (YAML syntax)
+        run: python3 -c "import yaml, sys; yaml.safe_load(open('litellm/config.yaml'))" && echo "OK"
+
+      - name: Validate Prometheus config (YAML syntax)
+        run: python3 -c "import yaml, sys; yaml.safe_load(open('prometheus/prometheus.yml'))" && echo "OK"
