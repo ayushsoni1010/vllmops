@@ -1,0 +1,291 @@
+# Architecture
+
+## Overview
+
+vLLMOps is a production-grade self-hosted LLM serving stack. Every external request passes through two layers before reaching the GPU: **nginx** (network/TLS) and **LiteLLM** (AI gateway). No client ever talks to vLLM directly.
+
+Diagrams directory: [`docs/diagrams/`](docs/diagrams/)
+
+---
+
+## System Architecture
+
+> Full diagram: [docs/diagrams/system-architecture.md](docs/diagrams/system-architecture.md)
+
+```mermaid
+graph TB
+    Client["🌐 Client\n(curl / SDK / app)"]
+    CLI["💻 Python CLI\nuv run llmops"]
+
+    subgraph docker["Docker Stack"]
+        subgraph pub["public network"]
+            nginx["nginx :8000\nreverse proxy · streaming"]
+        end
+        subgraph int["internal network"]
+            litellm["LiteLLM AI Gateway :4000\nauth · routing · rate-limit · fallback · cache"]
+            vllm["vLLM (GPU)\nQwen3-4B — no host port"]
+            redis["Redis\ncache + rate-limit"]
+            postgres["PostgreSQL\nkeys + usage logs"]
+            prometheus["Prometheus :9090"]
+            grafana["Grafana :3000"]
+            mlflow["MLflow :5000"]
+        end
+    end
+
+    ollama["Ollama (host)\ntinyllama — fallback #1"]
+    openai["OpenAI Cloud\ngpt-4o-mini — fallback #2"]
+
+    Client -->|"POST /v1/chat/completions"| nginx
+    nginx --> litellm
+    litellm -->|"primary"| vllm
+    litellm -.->|"fallback #1"| ollama
+    litellm -.->|"fallback #2"| openai
+    litellm <--> redis
+    litellm <--> postgres
+    prometheus --> vllm
+    prometheus --> litellm
+    grafana --> prometheus
+    CLI --> litellm
+    CLI --> mlflow
+
+    style pub fill:#e8f4fd,stroke:#3498db
+    style int fill:#eafaf1,stroke:#27ae60
+```
+
+---
+
+## Request Flow
+
+> Full diagram: [docs/diagrams/request-flow.md](docs/diagrams/request-flow.md)
+
+```mermaid
+sequenceDiagram
+    participant C  as Client
+    participant N  as nginx
+    participant L  as LiteLLM
+    participant R  as Redis
+    participant P  as PostgreSQL
+    participant V  as vLLM (GPU)
+
+    C  ->> N  : POST /v1/chat/completions · stream=true
+    N  ->> L  : proxy_pass (buffering off)
+    L  ->> P  : validate key + check budget
+    L  ->> R  : check rate-limit counter
+    L  ->> R  : cache lookup
+
+    alt Cache HIT
+        R  -->> C  : cached response (no GPU call)
+    else Cache MISS
+        L  ->> V  : forward inference request
+        loop SSE streaming
+            V  -->> C  : token chunk (via L → N)
+        end
+        L  ->> R  : store in cache
+        L  ->> P  : log usage (tokens · cost · latency)
+    end
+```
+
+---
+
+## Fallback Chain
+
+> Full diagram: [docs/diagrams/fallback-chain.md](docs/diagrams/fallback-chain.md)
+
+```mermaid
+flowchart TD
+    A([Request arrives at LiteLLM]) --> B{Key valid & under budget?}
+    B -->|No| Z1([401 / 429])
+    B -->|Yes| C{vLLM GPU healthy?}
+    C -->|Yes| D[Route → vLLM · Qwen3-4B]
+    C -->|"No — retry ×3"| E{Ollama on host healthy?}
+    E -->|Yes| F[Route → Ollama · tinyllama]
+    E -->|No| G{OPENAI_API_KEY set?}
+    G -->|Yes| H[Route → OpenAI · gpt-4o-mini]
+    G -->|No| Z2([503 All backends down])
+    D & F & H --> OUT([Stream · log · cache · metrics])
+
+    style D fill:#27ae60,color:#fff
+    style F fill:#f39c12,color:#fff
+    style H fill:#8e44ad,color:#fff
+    style Z1 fill:#e74c3c,color:#fff
+    style Z2 fill:#e74c3c,color:#fff
+```
+
+---
+
+## CLI Flow
+
+> Full diagram: [docs/diagrams/cli-flow.md](docs/diagrams/cli-flow.md)
+
+```mermaid
+sequenceDiagram
+    participant U  as Terminal
+    participant C  as cli.py
+    participant B  as client.py
+    participant ML as MLflow :5000
+    participant L  as LiteLLM / Ollama
+
+    U  ->> C  : uv run llmops
+    C  ->> C  : load_dotenv()
+    C  ->> ML : mlflow.langchain.autolog()
+    C  ->> B  : build_llm()
+    B  -->> C : ChatOllama (local) or ChatOpenAI (full stack)
+    C  ->> L  : llm.stream([HumanMessage(PROMPT)])
+    loop Token streaming
+        L  -->> U : print(chunk.content, end="", flush=True)
+    end
+    C  ->> ML : autolog flushes trace (inputs · outputs · latency)
+```
+
+---
+
+## Network Topology
+
+> Full diagram: [docs/diagrams/network-topology.md](docs/diagrams/network-topology.md)
+
+```mermaid
+graph LR
+    internet["🌐 Internet"] -->|":8000"| nginx
+
+    subgraph pub["public network"]
+        nginx
+    end
+
+    subgraph int["internal network"]
+        nginx --> litellm
+        litellm --> vllm
+        litellm --> redis
+        litellm --> postgres
+        prometheus --> vllm
+        prometheus --> litellm
+        grafana --> prometheus
+    end
+
+    litellm -.->|"host-gateway"| ollama["Ollama (host)"]
+
+    browser["🖥 Ops Browser"] -->|"127.0.0.1:4000/3000/9090/5000"| litellm
+
+    style pub fill:#d6eaf8,stroke:#2980b9
+    style int fill:#d5f5e3,stroke:#27ae60
+```
+
+### Port Reference
+
+| Service | Host binding | Accessible from |
+|---|---|---|
+| nginx | `0.0.0.0:8000` | Internet / all clients |
+| LiteLLM | `127.0.0.1:4000` | Host ops browser only |
+| Prometheus | `127.0.0.1:9090` | Host ops browser only |
+| Grafana | `127.0.0.1:3000` | Host ops browser only |
+| MLflow | `127.0.0.1:5000` | Host ops browser only |
+| vLLM | *none* | LiteLLM only (internal) |
+| Redis | *none* | LiteLLM only (internal) |
+| PostgreSQL | *none* | LiteLLM only (internal) |
+
+---
+
+## Component Responsibilities
+
+### nginx — Network Layer
+- Single public entry point on port 8000
+- Future home for TLS termination and WAF rules
+- Forwards requests to LiteLLM; has no knowledge of API keys or models
+- `proxy_http_version 1.1` + `proxy_buffering off` enable token-by-token streaming
+
+### LiteLLM — AI Gateway
+- Virtual API key management (create, revoke, per-key budgets)
+- Per-key rate limiting via Redis sliding-window counters
+- Model routing: maps `model: "qwen3-4b"` → vLLM backend
+- Retry (×3) then fallback: vLLM GPU → Ollama (host) → OpenAI cloud
+- Token and spend tracking persisted in PostgreSQL
+- Prometheus metrics at `/metrics` (request rates, error rates, latency, cost, token usage)
+- Redis exact-match + semantic caching to avoid redundant GPU calls
+
+### vLLM — Inference Engine
+- OpenAI-compatible API (`/v1/chat/completions`)
+- GPU-accelerated; requires NVIDIA driver + Container Toolkit
+- No host port — only reachable from LiteLLM on the internal Docker network
+- Exposes `/metrics` for Prometheus (TTFT, TPS, KV-cache hit rate, GPU utilisation)
+- Health-checked at `/health`; depends-on chain enforces startup order
+
+### Redis — Cache & Rate Limit Store
+- Exact-match and semantic response caching (LRU eviction at 256 MB)
+- Sliding-window counters for LiteLLM per-key rate limiting
+- Append-only log (`appendonly yes`) for durability across restarts
+
+### PostgreSQL — Persistent State
+- Virtual API key registry (create/revoke/budget assignments)
+- Per-request usage logs (tokens, cost, latency, model, key)
+- Spend budget tracking and alert thresholds
+- LiteLLM runs Prisma schema migrations automatically at startup
+
+### Prometheus — Metrics Collection
+- Scrapes vLLM at `vllm:8000/metrics` every 5 s
+- Scrapes LiteLLM at `litellm:4000/metrics` every 5 s
+- Evaluates alert rules from `prometheus/alerts.yml` every 30 s
+- `scrape_timeout: 4s < scrape_interval: 5s` (Prometheus requirement)
+
+### Grafana — Dashboards
+- Queries Prometheus for both vLLM and LiteLLM metrics
+- Two provisioned dashboards: `vllm_dashboard.json` + `litellm_dashboard.json`
+- `disableDeletion: true` — provisioned dashboards cannot be deleted via the UI
+
+### MLflow — Experiment Tracking (CLI)
+- `mlflow.langchain.autolog()` in the CLI captures traces, inputs, outputs, and latency
+- CLI connects via `MLFLOW_TRACKING_URI=http://localhost:5000`
+- Experiment data in `mlflow-data` named volume (SQLite backend)
+
+### Python CLI (`uv run llmops`)
+- Loads `.env` via `python-dotenv`
+- Builds a LangChain LLM client (ChatOllama for local dev, ChatOpenAI for full stack)
+- Streams the response token-by-token via LangChain's `.stream()`
+- MLflow autolog records the trace automatically
+
+---
+
+## Scaling Path
+
+To scale inference horizontally, add additional vLLM nodes to `litellm/config.yaml` under the same `model_name`. LiteLLM's `least-busy` router distributes requests across them — no nginx changes required.
+
+```yaml
+model_list:
+  - model_name: qwen3-4b
+    litellm_params:
+      model: openai/Qwen/Qwen3-4B-Instruct-2507
+      api_base: http://vllm-node-1:8000/v1
+      api_key: "none"
+
+  - model_name: qwen3-4b           # same virtual name, second GPU node
+    litellm_params:
+      model: openai/Qwen/Qwen3-4B-Instruct-2507
+      api_base: http://vllm-node-2:8000/v1
+      api_key: "none"
+```
+
+---
+
+## Resource Limits (per container)
+
+| Service | Memory limit | CPU limit | Notes |
+|---|---|---|---|
+| vLLM | 24 GB | 8 cores | Capped so a runaway job can't starve the obs stack |
+| LiteLLM | 1 GB | 2 cores | |
+| PostgreSQL | 1 GB | 1 core | |
+| Prometheus | 1 GB | 1 core | |
+| Redis | 512 MB | 0.5 cores | Internally limited to 256 MB (LRU eviction) |
+| Grafana | 512 MB | 0.5 cores | |
+| MLflow | 512 MB | 0.5 cores | |
+
+---
+
+## Alert Rules (`prometheus/alerts.yml`)
+
+| Alert | Condition | Severity |
+|---|---|---|
+| VLLMDown | `up{job="vllm"} == 0` for 1 m | critical |
+| VLLMHighGPUMemoryUsage | KV-cache > 90% for 5 m | warning |
+| VLLMHighQueueDepth | Waiting requests > 10 for 2 m | warning |
+| LiteLLMDown | `up{job="litellm"} == 0` for 1 m | critical |
+| LiteLLMHighErrorRate | Error rate > 10% for 2 m | warning |
+| LiteLLMAllBackendsDown | Error rate = 100% for 1 m | critical |
+| LiteLLMHighP95Latency | P95 latency > 60 s for 5 m | warning |
