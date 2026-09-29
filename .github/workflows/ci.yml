@@ -28,6 +28,9 @@ jobs:
       - name: Format check (ruff format)
         run: uv run ruff format --check src/
 
+      - name: Type check (pyright)
+        run: uv run pyright src/
+
   validate-config:
     name: Validate configs
     runs-on: ubuntu-latest
@@ -41,8 +44,10 @@ jobs:
           export HF_TOKEN=ci
           export LITELLM_MASTER_KEY=ci
           export POSTGRES_PASSWORD=ci
+          export REDIS_PASSWORD=ci
           export OPENAI_API_KEY=ci
           export GRAFANA_ADMIN_PASSWORD=ci
+          export LITELLM_WORKERS=2
           # Support both v1 (docker-compose) and v2 (docker compose) CLI
           docker compose config --quiet 2>/dev/null || docker-compose config --quiet
 
