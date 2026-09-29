@@ -6,7 +6,7 @@ Docker network isolation: which containers live on which network, and what host 
 graph TB
     subgraph host["Host Machine"]
         subgraph pub["public network (bridge)"]
-            nginx["nginx\nhost :8000 → container :80"]
+            nginx["nginx\nhost :80 → container :80"]
         end
 
         subgraph int["internal network (bridge)"]
@@ -51,7 +51,7 @@ graph TB
 
 | Service | Host binding | Purpose |
 |---|---|---|
-| nginx | `0.0.0.0:8000` | Public API entry point |
+| nginx | `0.0.0.0:80` | Public API entry point |
 | LiteLLM | `127.0.0.1:4000` | Ops UI + key management |
 | Prometheus | `127.0.0.1:9090` | Metrics UI |
 | Grafana | `127.0.0.1:3000` | Dashboards |

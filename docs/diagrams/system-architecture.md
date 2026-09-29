@@ -9,7 +9,7 @@ graph TB
 
     subgraph docker["Docker Stack (docker-compose.yml)"]
         subgraph pub["public network — internet-facing"]
-            nginx["nginx\nhost :8000 → internal :80\nreverse proxy · streaming · future TLS"]
+            nginx["nginx\nhost :80 → container :80\nreverse proxy · streaming · future TLS"]
         end
 
         subgraph int["internal network — backend only"]
@@ -27,7 +27,7 @@ graph TB
             subgraph obs["Observability"]
                 prometheus["Prometheus\n127.0.0.1:9090\nscrapes vLLM + LiteLLM every 5s"]
                 grafana["Grafana\n127.0.0.1:3000\nvLLM + LiteLLM dashboards"]
-                mlflow["MLflow\n127.0.0.1:5000\nLangChain autolog traces"]
+                mlflow["MLflow\n127.0.0.1:5000\nopenai autolog · traces · metrics"]
             end
         end
     end

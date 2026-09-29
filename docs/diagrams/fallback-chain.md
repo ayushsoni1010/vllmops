@@ -41,5 +41,4 @@ router_settings:
 
 fallbacks:
   - {"qwen3-4b": ["tinyllama"]}     # GPU down → local Ollama
-  - {"tinyllama": ["gpt-4o-mini"]}  # Ollama down → OpenAI cloud
 ```

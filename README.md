@@ -7,7 +7,7 @@ Production-grade LLMOps stack for self-hosted LLM inference. Combines vLLM (GPU 
 ```
 Clients (any OpenAI-compatible SDK / REST)
           │
-          ▼  :8000 (public)
+          ▼  :80 (public)
    ┌─────────────┐
    │    nginx    │  reverse proxy · TLS termination
    └──────┬──────┘
@@ -48,7 +48,7 @@ Observability  (localhost-only ports)
 | NVIDIA Container Toolkit | For GPU passthrough to vLLM |
 | Hugging Face account | Token required for gated models |
 | Python 3.12+ + uv | Local CLI only |
-| Ollama (optional) | Local fallback when GPU stack is not running |
+| Ollama | Required for `make up-local` (Mac/no-GPU dev); tinyllama must be pulled |
 
 ## Quick Start
 
@@ -63,8 +63,16 @@ cp .env.example .env
 
 ### 2. Start the stack
 
+**GPU server (Linux + NVIDIA):**
 ```bash
 docker compose up -d
+```
+
+**Mac / local dev (no GPU):**
+```bash
+ollama serve              # must be running first
+ollama pull tinyllama     # LiteLLM falls back to this
+make up-local             # skips vLLM, fails fast if Ollama is unreachable
 ```
 
 Services start in dependency order:
@@ -78,8 +86,8 @@ Services start in dependency order:
 # LiteLLM gateway health
 curl http://localhost:4000/health
 
-# Test inference through the full stack
-curl http://localhost:8000/v1/chat/completions \
+# Test inference through the full stack (nginx :80 → LiteLLM → vLLM / Ollama)
+curl http://localhost/v1/chat/completions \
   -H "Authorization: Bearer <VLLM_API_KEY>" \
   -H "Content-Type: application/json" \
   -d '{"model": "qwen3-4b", "messages": [{"role": "user", "content": "Hello"}], "stream": true}'
@@ -100,7 +108,7 @@ Requires the Docker stack to be running (for LiteLLM at `:4000` and MLflow at `:
 
 | Service | Host Port | Notes |
 |---|---|---|
-| nginx | `0.0.0.0:8000` | Public API entry point |
+| nginx | `0.0.0.0:80` | Public API entry point |
 | LiteLLM | `127.0.0.1:4000` | Gateway UI + virtual key management |
 | Prometheus | `127.0.0.1:9090` | Metrics browser |
 | Grafana | `127.0.0.1:3000` | Dashboards |
@@ -118,13 +126,39 @@ Copy `.env.example` to `.env` and fill in:
 | `HF_TOKEN` | vLLM | Download gated HuggingFace models |
 | `LITELLM_MASTER_KEY` | LiteLLM | Admin key to create/revoke virtual keys |
 | `POSTGRES_PASSWORD` | LiteLLM + Postgres | Database auth |
+| `REDIS_PASSWORD` | Redis + LiteLLM | Redis auth; required by both server and cache client |
 | `OPENAI_API_KEY` | LiteLLM (optional) | Cloud fallback route |
+| `LITELLM_WORKERS` | LiteLLM | Number of gateway workers (default `2`) |
 | `GRAFANA_ADMIN_PASSWORD` | Grafana | UI login |
 | `VLLM_API_BASE` | CLI | LiteLLM OpenAI-compatible endpoint |
 | `VLLM_API_KEY` | CLI | Virtual key or master key for CLI requests |
 | `VLLM_MODEL` | CLI | Model name as registered in `litellm/config.yaml` |
-| `MLFLOW_TRACKING_URI` | CLI | Points autolog to the MLflow server |
+| `MLFLOW_TRACKING_URI` | CLI | MLflow server URL for the tracking client |
+| `MLFLOW_EXPERIMENT` | CLI | Experiment name (default `"vllmops"`) |
+| `RUN_USER` | CLI | Username tag on every MLflow run; required |
+| `RUN_EMAIL` | CLI | Email tag on every MLflow run; required |
+| `APP_ENV` | CLI | Environment tag: `dev` / `staging` / `prod` (default `"dev"`) |
 | `PROMPT` | CLI | Default prompt (overridable) |
+
+## Local Dev (Mac, no GPU)
+
+`make up-local` starts all services except vLLM. LiteLLM routes requests through its fallback chain to Ollama running natively on the host.
+
+```bash
+# One-time setup
+ollama pull tinyllama
+
+# Every session
+ollama serve          # must be running before make up-local
+make up-local         # fails fast with a clear error if Ollama is unreachable
+
+# Run the CLI
+uv run llmops
+```
+
+Traffic path: `CLI → nginx :80 → LiteLLM → Ollama (host.docker.internal:11434)`
+
+After `make down-v` (which wipes Postgres), virtual keys are gone. Set `VLLM_API_KEY` to `LITELLM_MASTER_KEY` temporarily, then run `make key` to create a scoped virtual key.
 
 ## Managing Virtual API Keys
 

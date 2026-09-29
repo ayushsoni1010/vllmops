@@ -26,7 +26,7 @@ docker compose ps              # check health status
 ```
 src/llmops/
   __init__.py    re-exports main — touch only if adding public API
-  cli.py         main(): load_dotenv → autolog → build_llm → stream
+  cli.py         load_dotenv() at module level; main(): set_experiment → openai_autolog → uuid4 correlation_id → build_llm → start_run → set_tags → log_params → stream → log_metrics
   client.py      build_llm(): ChatOpenAI pointed at VLLM_API_BASE
 
 litellm/config.yaml   model registry, fallback chain, Redis cache config
@@ -43,7 +43,13 @@ All required vars are in `.env`. The pattern is fail-loud (`os.environ["KEY"]` n
 - `VLLM_API_BASE` — LiteLLM OpenAI endpoint the CLI hits
 - `VLLM_API_KEY` — virtual key or master key
 - `VLLM_MODEL` — must match a `model_name` in `litellm/config.yaml`
-- `MLFLOW_TRACKING_URI` — picked up automatically by `mlflow.langchain.autolog()`
+- `MLFLOW_TRACKING_URI` — MLflow server URL for the tracking client
+- `RUN_USER` — username stamped on every MLflow run (`mlflow.user` tag); required, fail-loud
+- `RUN_EMAIL` — email stamped on every MLflow run (`user.email` tag); required, fail-loud
+- `REDIS_PASSWORD` — Redis auth password; required by both redis-server and LiteLLM cache
+- `LITELLM_WORKERS` — number of LiteLLM workers (default `2` via compose; set explicitly in `.env`)
+- `MLFLOW_EXPERIMENT` — MLflow experiment name (optional; default `"vllmops"`)
+- `APP_ENV` — deployment environment tag on runs: `dev` / `staging` / `prod` (optional; default `"dev"`)
 
 ## Conventions
 
@@ -76,3 +82,4 @@ All required vars are in `.env`. The pattern is fail-loud (`os.environ["KEY"]` n
 - Do not add a dual-backend abstraction to the CLI — keep it env-driven and single-path
 - Do not commit `.env` — it is gitignored; only `.env.example` is tracked
 - Do not commit `mlflow.db` — add it to `.gitignore` if it appears
+- Do not commit `mlruns.db` or `mlruns/` — both are gitignored; they are bind-mounted into the MLflow container

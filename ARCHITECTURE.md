@@ -19,7 +19,7 @@ graph TB
 
     subgraph docker["Docker Stack"]
         subgraph pub["public network"]
-            nginx["nginx :8000\nreverse proxy · streaming"]
+            nginx["nginx :80\nreverse proxy · streaming"]
         end
         subgraph int["internal network"]
             litellm["LiteLLM AI Gateway :4000\nauth · routing · rate-limit · fallback · cache"]
@@ -28,7 +28,7 @@ graph TB
             postgres["PostgreSQL\nkeys + usage logs"]
             prometheus["Prometheus :9090"]
             grafana["Grafana :3000"]
-            mlflow["MLflow :5000"]
+            mlflow["MLflow :5000\nopenai autolog · traces · metrics"]
         end
     end
 
@@ -145,7 +145,7 @@ sequenceDiagram
 
 ```mermaid
 graph LR
-    internet["🌐 Internet"] -->|":8000"| nginx
+    internet["🌐 Internet"] -->|":80"| nginx
 
     subgraph pub["public network"]
         nginx
@@ -173,7 +173,7 @@ graph LR
 
 | Service | Host binding | Accessible from |
 |---|---|---|
-| nginx | `0.0.0.0:8000` | Internet / all clients |
+| nginx | `0.0.0.0:80` | Internet / all clients |
 | LiteLLM | `127.0.0.1:4000` | Host ops browser only |
 | Prometheus | `127.0.0.1:9090` | Host ops browser only |
 | Grafana | `127.0.0.1:3000` | Host ops browser only |
@@ -187,7 +187,7 @@ graph LR
 ## Component Responsibilities
 
 ### nginx — Network Layer
-- Single public entry point on port 8000
+- Single public entry point on port 80
 - Future home for TLS termination and WAF rules
 - Forwards requests to LiteLLM; has no knowledge of API keys or models
 - `proxy_http_version 1.1` + `proxy_buffering off` enable token-by-token streaming
@@ -231,15 +231,18 @@ graph LR
 - `disableDeletion: true` — provisioned dashboards cannot be deleted via the UI
 
 ### MLflow — Experiment Tracking (CLI)
-- `mlflow.langchain.autolog()` in the CLI captures traces, inputs, outputs, and latency
+- Image `v3.16.0`, single-worker uvicorn (`--workers 1`), 1 GB memory limit
+- `openai_autolog()` in the CLI patches the openai SDK to capture traces; records at `/api/3.0/mlflow/traces`
 - CLI connects via `MLFLOW_TRACKING_URI=http://localhost:5000`
-- Experiment data in `mlflow-data` named volume (SQLite backend)
+- Backend store: SQLite (`mlruns.db`) bind-mounted from host; artifacts in `./mlruns` served via `--serve-artifacts`
 
 ### Python CLI (`uv run llmops`)
-- Loads `.env` via `python-dotenv`
-- Builds a LangChain LLM client (ChatOllama for local dev, ChatOpenAI for full stack)
-- Streams the response token-by-token via LangChain's `.stream()`
-- MLflow autolog records the trace automatically
+- `load_dotenv()` runs at module level (before mlflow import) so `MLFLOW_DISABLE_AGENT_HINT` is set in time
+- Always uses `ChatOpenAI` pointed at `VLLM_API_BASE` (LiteLLM gateway); Ollama fallback is handled inside LiteLLM
+- Generates a `uuid4` correlation ID per run — set as `run.correlation_id` MLflow tag and forwarded as `X-Correlation-ID` header, linking the MLflow run to LiteLLM/nginx access logs
+- Tags every run with: `mlflow.user` (RUN_USER), `user.email` (RUN_EMAIL), `env` (APP_ENV), `app.version`, `run.correlation_id`, and optionally `git.commit` (GIT_COMMIT, CI only)
+- Logs params: `model`, `api_base`, `prompt_chars`
+- Logs metrics: `latency_ms`, `output_chars` (running counter, no buffering)
 
 ---
 
@@ -272,9 +275,9 @@ model_list:
 | LiteLLM | 1 GB | 2 cores | |
 | PostgreSQL | 1 GB | 1 core | |
 | Prometheus | 1 GB | 1 core | |
-| Redis | 512 MB | 0.5 cores | Internally limited to 256 MB (LRU eviction) |
+| Redis | 768 MB | 0.5 cores | Internally limited to 512 MB (LRU eviction) |
 | Grafana | 512 MB | 0.5 cores | |
-| MLflow | 512 MB | 0.5 cores | |
+| MLflow | 1 GB | 1 core | 3.x starts at ~750 MB; 512 MB causes OOM restarts |
 
 ---
 
