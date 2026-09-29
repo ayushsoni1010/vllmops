@@ -126,15 +126,18 @@ sequenceDiagram
     participant L  as LiteLLM / Ollama
 
     U  ->> C  : uv run llmops
-    C  ->> C  : load_dotenv()
-    C  ->> ML : mlflow.langchain.autolog()
-    C  ->> B  : build_llm()
-    B  -->> C : ChatOllama (local) or ChatOpenAI (full stack)
+    C  ->> C  : load_dotenv() at module level
+    C  ->> ML : openai_autolog() — patches openai SDK
+    C  ->> C  : correlation_id = uuid4()
+    C  ->> B  : build_llm(extra_headers={"X-Correlation-ID": correlation_id})
+    B  -->> C : ChatOpenAI(base_url=VLLM_API_BASE)
+    C  ->> ML : start_run() · set_tags() · log_params()
     C  ->> L  : llm.stream([HumanMessage(PROMPT)])
     loop Token streaming
         L  -->> U : print(chunk.content, end="", flush=True)
     end
-    C  ->> ML : autolog flushes trace (inputs · outputs · latency)
+    C  ->> ML : log_metrics(latency_ms · output_chars)
+    C  ->> ML : openai_autolog flushes trace → /api/3.0/mlflow/traces
 ```
 
 ---
@@ -209,7 +212,7 @@ graph LR
 - Health-checked at `/health`; depends-on chain enforces startup order
 
 ### Redis — Cache & Rate Limit Store
-- Exact-match and semantic response caching (LRU eviction at 256 MB)
+- Exact-match and semantic response caching (LRU eviction at 512 MB)
 - Sliding-window counters for LiteLLM per-key rate limiting
 - Append-only log (`appendonly yes`) for durability across restarts
 

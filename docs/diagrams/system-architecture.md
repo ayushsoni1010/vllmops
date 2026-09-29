@@ -20,7 +20,7 @@ graph TB
             end
 
             subgraph store["Persistent State"]
-                redis["Redis\n(cache + rate-limit counters)\nLRU 256 MB · AOF durable"]
+                redis["Redis\n(cache + rate-limit counters)\nLRU 512 MB · AOF durable"]
                 postgres["PostgreSQL\n(virtual keys · usage logs · budgets)"]
             end
 

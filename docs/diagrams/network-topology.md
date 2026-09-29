@@ -25,7 +25,7 @@ graph TB
     internet["🌐 Internet / Client"]
     browser["🖥 Ops Browser\n(host only — 127.0.0.1)"]
 
-    internet -->|":8000"| nginx
+    internet -->|":80"| nginx
     nginx --> litellm
 
     litellm --> vllm
