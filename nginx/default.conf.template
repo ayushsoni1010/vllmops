@@ -3,25 +3,58 @@
 # (the next hop). Do not add auth logic here — it belongs in LiteLLM so
 # virtual keys can be managed centrally without reloading nginx.
 
+# ── Upstream pool ─────────────────────────────────────────────────────────────
+# Named upstream enables keepalive connection pooling to LiteLLM.
+# Without this, every request opens a new TCP connection — wasteful and slow.
+# proxy_http_version 1.1 + Connection "" header (below) activate keepalive.
+upstream litellm_backend {
+    server litellm:4000;
+    keepalive 64;          # idle connections kept open in the worker pool
+    keepalive_timeout 75s; # matches nginx's default keepalive_timeout
+}
+
+# ── Rate limiting ─────────────────────────────────────────────────────────────
+# 10MB state table holds ~160K unique IPs. One zone for the entire API.
+# Soft limit: 20 req/s sustained. Burst: 40 instantaneous requests before 429.
+# LiteLLM enforces per-key budgets on top of this network-layer limit.
+limit_req_zone $binary_remote_addr zone=api:10m rate=20r/s;
+limit_req_status 429;
+
 server {
     listen 80;
 
     # Suppress nginx version from error pages and response headers.
     server_tokens off;
 
+    # Reject request bodies larger than 10 MB.
+    # LLM prompts are text; anything larger is almost certainly abuse.
+    client_max_body_size 10m;
+
     location / {
+        # ── Rate limiting ─────────────────────────────────────────────────────
+        # Allow up to 40-request burst, then enforce 20 req/s.
+        # nodelay: serve burst immediately rather than queuing them.
+        limit_req zone=api burst=40 nodelay;
+
+        # ── Security headers ──────────────────────────────────────────────────
+        # These apply to all responses — including streaming chunks.
+        add_header X-Content-Type-Options  "nosniff"                          always;
+        add_header X-Frame-Options         "DENY"                             always;
+        add_header Referrer-Policy         "strict-origin-when-cross-origin"  always;
+
         # ── Proxy target ─────────────────────────────────────────────────────
         # Forward all requests to the LiteLLM AI gateway.
         # LiteLLM handles: auth, rate limiting, routing, retries, fallback.
-        proxy_pass http://litellm:4000;
+        proxy_pass http://litellm_backend;
 
         # ── Upstream protocol ────────────────────────────────────────────────
-        # HTTP/1.1 is required for chunked transfer encoding.
-        # Without this, nginx defaults to HTTP/1.0, which buffers the entire
-        # LLM response before forwarding — breaking token-by-token streaming.
+        # HTTP/1.1 is required for both chunked transfer encoding (streaming)
+        # and upstream keepalive. Without this, nginx defaults to HTTP/1.0,
+        # which buffers the entire response and breaks token-by-token output.
         proxy_http_version 1.1;
 
-        # Clear the Connection header to enable HTTP/1.1 keepalive upstream.
+        # Clear Connection header to enable HTTP/1.1 keepalive upstream.
+        # Must be empty string (not "keep-alive") per nginx docs.
         proxy_set_header Connection "";
 
         # ── Standard reverse-proxy headers ───────────────────────────────────
@@ -43,7 +76,7 @@ server {
 
         # Instruct downstream CDNs/proxies (Cloudflare, AWS ALB, etc.)
         # to also disable their buffering for this response.
-        add_header       X-Accel-Buffering no;
+        add_header       X-Accel-Buffering no always;
         proxy_set_header X-Accel-Buffering no;
 
         # ── Timeouts ─────────────────────────────────────────────────────────
