@@ -14,6 +14,7 @@ up:
 # LiteLLM automatically falls back to Ollama on the host.
 # Prerequisite: run `ollama serve` before starting the stack.
 up-local:
+	@touch mlruns.db && mkdir -p mlruns
 	$(COMPOSE) up -d --scale vllm=0
 
 down:

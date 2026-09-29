@@ -217,11 +217,16 @@ services:
 
   # ── MLflow ───────────────────────────────────────────────────────────────────
   # Experiment tracking for the llmops CLI.
-  # The CLI connects here via MLFLOW_TRACKING_URI=http://localhost:5000 (.env).
+  # CLI writes runs via HTTP: MLFLOW_TRACKING_URI=http://localhost:5000.
+  # Backend store: bind-mounted SQLite (survives make down-v, host-accessible).
+  # Artifact store: bind-mounted ./mlruns directory (survives container restart).
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v3.16.0
+    image: ghcr.io/mlflow/mlflow:v2.22.1
     volumes:
-      - mlflow-data:/mlflow
+      # Bind-mount the host SQLite file so the CLI and the UI server share
+      # the same experiment/run data without going through HTTP.
+      - ./mlruns.db:/mlruns.db
+      - ./mlruns:/mlruns
     ports:
       # Localhost-only: MLflow UI for experiment review, not exposed to LAN.
       - "127.0.0.1:5000:5000"
@@ -229,8 +234,9 @@ services:
       mlflow server
       --host 0.0.0.0
       --port 5000
-      --backend-store-uri sqlite:////mlflow/mlflow.db
-      --default-artifact-root file:///mlflow/artifacts
+      --backend-store-uri sqlite:////mlruns.db
+      --default-artifact-root /mlruns
+      --serve-artifacts
     deploy:
       resources:
         limits:
@@ -257,8 +263,6 @@ networks:
 
 # ── Volumes ───────────────────────────────────────────────────────────────────
 volumes:
-  mlflow-data:
-    driver: local
   prometheus-data:
     driver: local
   grafana-data:

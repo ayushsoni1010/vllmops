@@ -16,4 +16,7 @@ wheels/
 mlflow.db
 mlflow.db-shm
 mlflow.db-wal
+mlruns.db
+mlruns.db-shm
+mlruns.db-wal
 mlruns/
