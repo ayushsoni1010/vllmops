@@ -12,8 +12,10 @@ up:
 
 # Mac / no-GPU local dev — skips vLLM (requires NVIDIA GPU).
 # LiteLLM automatically falls back to Ollama on the host.
-# Prerequisite: run `ollama serve` before starting the stack.
+# Prerequisite: `ollama serve` must be running before this target.
 up-local:
+	@curl -sf http://localhost:11434 > /dev/null 2>&1 || \
+		{ echo "ERROR: Ollama is not running. Start it with 'ollama serve' first."; exit 1; }
 	@touch mlruns.db && mkdir -p mlruns
 	$(COMPOSE) up -d --scale vllm=0
 
