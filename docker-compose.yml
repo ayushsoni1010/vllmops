@@ -13,7 +13,10 @@ services:
       - ./nginx/default.conf.template:/etc/nginx/templates/default.conf.template
     ports:
       # The single public entry point for all LLM API traffic.
-      - "8000:80"
+      # Maps host :80 → nginx container :80 → LiteLLM :4000.
+      # vLLM also runs on :8000 but only inside the Docker internal network
+      # (no host binding) — there is no port conflict with nginx.
+      - "80:80"
     networks:
       - public    # receives traffic from clients
       - internal  # forwards validated requests to LiteLLM
