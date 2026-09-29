@@ -42,15 +42,15 @@ services:
     image: ghcr.io/berriai/litellm:main-stable
     volumes:
       - ./litellm/config.yaml:/app/config.yaml
-    command: --config /app/config.yaml --port 4000 --num_workers 2
+    command: --config /app/config.yaml --port 4000 --num_workers ${LITELLM_WORKERS:-2}
     ports:
-      # Bind to localhost only — the LiteLLM UI/API is for ops, not clients.
+      # Localhost-only: LiteLLM UI/API for ops, not exposed to clients.
       - "127.0.0.1:4000:4000"
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY}
-      # DATABASE_URL is constructed from POSTGRES_PASSWORD so callers only
-      # need to set one secret; the host/db/user are fixed internal values.
+      # DATABASE_URL constructed from POSTGRES_PASSWORD — one secret to manage.
       - DATABASE_URL=postgresql://litellm:${POSTGRES_PASSWORD}@postgres:5432/litellm
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
       # Optional cloud fallback — leave empty to disable the gpt-4o-mini route.
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     healthcheck:
@@ -122,13 +122,14 @@ services:
       - redis-data:/data
     command: >
       redis-server
+      --requirepass ${REDIS_PASSWORD}
       --appendonly yes
-      --maxmemory 256mb
+      --maxmemory 512mb
       --maxmemory-policy allkeys-lru
     deploy:
       resources:
         limits:
-          memory: 512m
+          memory: 768m
           cpus: "0.5"
     networks:
       - internal
