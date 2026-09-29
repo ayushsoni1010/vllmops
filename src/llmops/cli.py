@@ -1,15 +1,15 @@
 import os
 
-import mlflow
 from dotenv import load_dotenv
 from langchain_core.messages import HumanMessage
+from mlflow.langchain import autolog as langchain_autolog
 
 from llmops.client import build_llm
 
 
 def main() -> None:
     load_dotenv()
-    mlflow.langchain.autolog()
+    langchain_autolog()
 
     llm = build_llm()
     prompt = os.environ["PROMPT"]
