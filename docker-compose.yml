@@ -221,10 +221,8 @@ services:
   # Backend store: bind-mounted SQLite (survives make down-v, host-accessible).
   # Artifact store: bind-mounted ./mlruns directory (survives container restart).
   mlflow:
-    image: ghcr.io/mlflow/mlflow:v2.22.1
+    image: ghcr.io/mlflow/mlflow:v3.16.0
     volumes:
-      # Bind-mount the host SQLite file so the CLI and the UI server share
-      # the same experiment/run data without going through HTTP.
       - ./mlruns.db:/mlruns.db
       - ./mlruns:/mlruns
     ports:
@@ -238,11 +236,12 @@ services:
       --serve-artifacts
       --artifacts-destination /mlruns
       --default-artifact-root mlflow-artifacts:/
+      --workers 1
     deploy:
       resources:
         limits:
-          memory: 512m
-          cpus: "0.5"
+          memory: 1g
+          cpus: "1"
     networks:
       - internal
     restart: unless-stopped
