@@ -9,9 +9,8 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "langchain>=1.4.0",
-    "langchain-ollama>=0.3.0",
     "langchain-openai>=1.6.2",
-    "mlflow[genai]>=3.16.0",
+    "mlflow[genai]>=2.22.1,<3",
     "python-dotenv>=1.2.3",
 ]
 
@@ -27,5 +26,6 @@ dev = [
     "ipywidgets>=8.1.9",
     "jupyterlab>=4.6.3",
     "pre-commit>=4.6.2",
+    "pyright>=1.1.0",
     "ruff>=0.16.7",
 ]
