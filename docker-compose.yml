@@ -14,9 +14,20 @@ services:
       # vLLM also runs on :8000 but only inside the Docker internal network
       # (no host binding) — there is no port conflict with nginx.
       - "80:80"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health/liveliness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
     networks:
       - public    # receives traffic from clients
-      - internal  # forwards validated requests to LiteLLM
+      - internal  # forwards requests to LiteLLM
     depends_on:
       litellm:
         # nginx only accepts traffic once LiteLLM has passed its health check.
@@ -190,6 +201,8 @@ services:
     environment:
       - GF_PROVISIONING_PATH=/etc/grafana/provisioning
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=false
     deploy:
       resources:
         limits:
