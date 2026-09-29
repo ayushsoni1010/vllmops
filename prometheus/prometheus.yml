@@ -15,5 +15,6 @@ scrape_configs:
   # LiteLLM AI gateway — exposes request counts, error rates, latency,
   # token usage, and spend per model / virtual key.
   - job_name: "litellm"
+    metrics_path: /metrics/
     static_configs:
       - targets: ["litellm:4000"]

@@ -74,6 +74,9 @@ litellm_settings:
   # Keep logs concise in production. Set to true only for local debugging.
   set_verbose: false
 
+  # Allow Prometheus to scrape /metrics without a bearer token.
+  require_auth_for_metrics_endpoint: false
+
 
 # ── General / auth settings ────────────────────────────────────────────────────
 general_settings:
