@@ -235,8 +235,9 @@ services:
       --host 0.0.0.0
       --port 5000
       --backend-store-uri sqlite:////mlruns.db
-      --default-artifact-root /mlruns
       --serve-artifacts
+      --artifacts-destination /mlruns
+      --default-artifact-root mlflow-artifacts:/
     deploy:
       resources:
         limits:
