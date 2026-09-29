@@ -46,7 +46,7 @@ services:
       # Optional cloud fallback — leave empty to disable the gpt-4o-mini route.
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:4000/health/liveliness')"]
       interval: 30s
       timeout: 10s
       retries: 3

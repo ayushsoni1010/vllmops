@@ -88,3 +88,6 @@ general_settings:
   # Persist model configuration in the database so changes made via the
   # LiteLLM UI survive container restarts.
   store_model_in_db: true
+
+  # Health and liveliness endpoints are public (used by Docker healthcheck and monitoring).
+  public_routes: ["/health", "/health/liveliness"]
