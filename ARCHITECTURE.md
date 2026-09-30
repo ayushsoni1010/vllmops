@@ -131,8 +131,9 @@ sequenceDiagram
     C  ->> C  : correlation_id = uuid4()
     C  ->> B  : build_llm(extra_headers={"X-Correlation-ID": correlation_id})
     B  -->> C : ChatOpenAI(base_url=VLLM_API_BASE)
-    C  ->> ML : start_run() · set_tags() · log_params()
-    C  ->> L  : llm.stream([HumanMessage(PROMPT)])
+    C  ->> C  : render(PROMPT_TEMPLATE, PROMPT_VAR_*) → prompt
+    C  ->> ML : start_run() · set_tags() · log_params() · log_artifacts(prompts/)
+    C  ->> L  : llm.stream([HumanMessage(prompt)])
     loop Token streaming
         L  -->> U : print(chunk.content, end="", flush=True)
     end

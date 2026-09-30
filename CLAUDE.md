@@ -26,14 +26,18 @@ docker compose ps              # check health status
 ```
 src/llmops/
   __init__.py    re-exports main — touch only if adding public API
-  cli.py         load_dotenv() at module level; main(): set_experiment → openai_autolog → uuid4 correlation_id → build_llm → start_run → set_tags → log_params → stream → log_metrics
+  cli.py         load_dotenv() at module level; main(): set_experiment → openai_autolog → collect_vars/render → uuid4 correlation_id → build_llm → start_run → set_tags → log_params → log_artifacts(prompts/) → stream → log_metrics
   client.py      build_llm(): ChatOpenAI pointed at VLLM_API_BASE
+  prompts.py     collect_vars(), render(), log_artifacts() — Jinja2 template loading and MLflow artifact logging
 
+prompts/               versioned Jinja2 prompt templates (.j2 files)
+  default.j2           default template; variables injected from PROMPT_VAR_* env vars
 litellm/config.yaml   model registry, fallback chain, Redis cache config
 nginx/default.conf.template   reverse proxy; no auth (LiteLLM owns auth)
 prometheus/prometheus.yml     scrape targets: vllm + litellm
 grafana/dashboards/           provisioned dashboard JSON
 docker-compose.yml            full service graph
+pyrightconfig.json    points pyright at .venv for import resolution
 .env / .env.example           all runtime secrets and config
 ```
 
@@ -50,6 +54,9 @@ All required vars are in `.env`. The pattern is fail-loud (`os.environ["KEY"]` n
 - `LITELLM_WORKERS` — number of LiteLLM workers (default `2` via compose; set explicitly in `.env`)
 - `MLFLOW_EXPERIMENT` — MLflow experiment name (optional; default `"vllmops"`)
 - `APP_ENV` — deployment environment tag on runs: `dev` / `staging` / `prod` (optional; default `"dev"`)
+- `PROMPT_TEMPLATE` — name of the template file in `prompts/` without `.j2` (optional; default `"default"`)
+- `PROMPT_VAR_*` — variables injected into the Jinja2 template at render time (e.g. `PROMPT_VAR_TOPIC=LLMOps`); collected automatically by prefix scan
+- `PROMPTS_DIR` — override path to the prompts directory (optional; default `./prompts` relative to CWD)
 
 ## Conventions
 
@@ -57,7 +64,7 @@ All required vars are in `.env`. The pattern is fail-loud (`os.environ["KEY"]` n
 - No try/except around `os.environ["KEY"]` — missing env vars must fail loudly
 - No default fallbacks for required config — if a key is wrong, it should crash, not silently use a wrong value
 - `__init__.py` is a re-export only — no logic there
-- Business logic lives in `cli.py` (orchestration) and `client.py` (LLM construction)
+- Business logic lives in `cli.py` (orchestration), `client.py` (LLM construction), and `prompts.py` (template rendering)
 - No argparse / click — config is env-driven
 - Streaming via `.stream()`, not `.invoke()` — never buffer a full LLM response
 

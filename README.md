@@ -138,7 +138,9 @@ Copy `.env.example` to `.env` and fill in:
 | `RUN_USER` | CLI | Username tag on every MLflow run; required |
 | `RUN_EMAIL` | CLI | Email tag on every MLflow run; required |
 | `APP_ENV` | CLI | Environment tag: `dev` / `staging` / `prod` (default `"dev"`) |
-| `PROMPT` | CLI | Default prompt (overridable) |
+| `PROMPT_TEMPLATE` | CLI | Template name in `prompts/` (default `"default"`) |
+| `PROMPT_VAR_*` | CLI | Variables injected into the template (e.g. `PROMPT_VAR_TOPIC=LLMOps`) |
+| `PROMPTS_DIR` | CLI | Override path to the prompts directory (default `./prompts`) |
 
 ## Local Dev (Mac, no GPU)
 
