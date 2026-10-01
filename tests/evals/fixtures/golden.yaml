@@ -1,0 +1,38 @@
+# Golden eval cases — each case renders a prompt template, calls the model,
+# and asserts the output matches at least one expected_pattern.
+#
+# Patterns use Python re.search() (case-insensitive via (?i) flag).
+# Keep patterns broad: the fallback backend (tinyllama) paraphrases freely.
+# max_latency_ms is a hard upper bound per case; 60 s is generous for local GPU/CPU.
+cases:
+  - id: llmops_one_liner
+    template: default
+    variables:
+      topic: LLMOps
+    expected_patterns:
+      - "(?i)(model|learning|inference|operation|language|machine|deployment|training|platform|processing|performance|throughput|streaming|pipeline|latency|architecture|workflow)"
+    max_latency_ms: 60000
+
+  - id: vllm_one_liner
+    template: default
+    variables:
+      topic: vLLM
+    expected_patterns:
+      - "(?i)(model|inference|serving|gpu|language|generation|throughput|fast|speed)"
+    max_latency_ms: 60000
+
+  - id: python_one_liner
+    template: default
+    variables:
+      topic: Python
+    expected_patterns:
+      - "(?i)(programming|language|code|software|script|developer|general.purpose)"
+    max_latency_ms: 60000
+
+  - id: docker_one_liner
+    template: default
+    variables:
+      topic: Docker
+    expected_patterns:
+      - "(?i)(container|application|deploy|service|image|platform|environment|run)"
+    max_latency_ms: 60000
