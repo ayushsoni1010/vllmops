@@ -27,6 +27,13 @@ dev = [
     "ipywidgets>=8.1.9",
     "jupyterlab>=4.6.3",
     "pre-commit>=4.6.2",
+    "pytest>=8.0",
     "pyright>=1.1.0",
+    "pyyaml>=6.0",
     "ruff>=0.16.7",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "eval: LLM evaluation tests — require the live stack; run with `uv run pytest tests/evals/`",
 ]
