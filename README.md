@@ -143,6 +143,10 @@ Copy `.env.example` to `.env` and fill in:
 | `PROMPTS_DIR` | CLI | Override path to the prompts directory (default `./prompts`) |
 | `PROMPT_TOKEN_COST` | CLI | USD per prompt token for `cost_usd` metric (default `0.0`) |
 | `COMPLETION_TOKEN_COST` | CLI | USD per completion token for `cost_usd` metric (default `0.0`) |
+| `MLFLOW_REGISTER_MODEL` | Registry | Registered model name (e.g. `qwen3-4b-awq`); required for `llmops-register` |
+| `MODEL_QUANTIZATION` | Registry | Declared quantization variant (e.g. `awq`, `gptq`); stored as metadata |
+| `MODEL_ADAPTER` | Registry | Declared LoRA adapter path or HF hub name; stored as metadata |
+| `MODEL_ALIAS` | Registry | Alias to set on the new version (e.g. `champion`, `challenger`) |
 
 ## Local Dev (Mac, no GPU)
 
@@ -184,7 +188,8 @@ vllmops/
 │   ├── cli.py               # main() — renders prompt, autologs MLflow, streams response, logs cost metrics
 │   ├── client.py            # build_llm() — ChatOpenAI pointed at LiteLLM (stream_usage=True)
 │   ├── cost.py              # compute_cost() — prompt/completion token rates → cost_usd
-│   └── prompts.py           # collect_vars(), render(), log_artifacts() — Jinja2 templates
+│   ├── prompts.py           # collect_vars(), render(), log_artifacts() — Jinja2 templates
+│   └── registry.py          # register() — vLLM serving config → MLflow model version + alias
 ├── prompts/
 │   └── default.j2           # default prompt template (PROMPT_VAR_* injected at render time)
 ├── tests/evals/
@@ -206,6 +211,27 @@ vllmops/
 ├── .env.example
 └── ARCHITECTURE.md
 ```
+
+## Model Registry
+
+Track vLLM serving configurations (base model + quantization + adapter) as versioned entries in the MLflow Model Registry. This is a **config catalog**, not a model store — vLLM owns the weights; MLflow tracks provenance and promotes variants via aliases.
+
+```bash
+# Register base AWQ variant as champion
+MLFLOW_REGISTER_MODEL=qwen3-4b-awq \
+MODEL_QUANTIZATION=awq \
+MODEL_ALIAS=champion \
+uv run llmops-register
+
+# Register a LoRA-adapted variant as challenger
+MLFLOW_REGISTER_MODEL=qwen3-4b-awq \
+MODEL_QUANTIZATION=awq \
+MODEL_ADAPTER=Qwen/Qwen3-4B-LoRA-finance \
+MODEL_ALIAS=challenger \
+uv run llmops-register
+```
+
+Each invocation creates a dedicated run in the `vllmops-registry` MLflow experiment, logs a `serving_config.json` artifact, and registers a new model version. Browse versions and promote aliases at `http://localhost:5000/#/models`.
 
 ## Evaluation
 

@@ -249,6 +249,13 @@ graph LR
 - Logs metrics: `latency_ms`, `output_chars`, `prompt_tokens`, `completion_tokens`, `cost_usd` (computed from `PROMPT_TOKEN_COST` + `COMPLETION_TOKEN_COST` rates; defaults to `0.0` for self-hosted inference)
 - Logs artifacts under `prompts/`: `rendered.txt`, `variables.json`, `<name>.j2` (template source)
 
+### Model Registry (`uv run llmops-register`)
+- Config-catalog pattern: each registered model version records a `serving_config.json` (base model + quantization + adapter) linked to a dedicated MLflow run in the `vllmops-registry` experiment
+- Uses MLflow 3.x aliases (`champion`, `challenger`) instead of deprecated stages — `MlflowClient.set_registered_model_alias()` is the promotion API
+- `MLFLOW_REGISTER_MODEL` names the registered model; `MODEL_QUANTIZATION`, `MODEL_ADAPTER`, `MODEL_ALIAS` are optional serving metadata
+- Deliberate operation: run once per new variant, not once per inference call
+- `pyfunc.load_model()` on a version is not supported — vLLM owns the weights; MLflow tracks provenance only
+
 ### Eval Harness (`uv run pytest tests/evals/`)
 - Pattern-based golden regression suite; validates output quality against `expected_patterns` (Python `re.search`)
 - Cases defined in `tests/evals/fixtures/golden.yaml` as data — add cases without touching Python
