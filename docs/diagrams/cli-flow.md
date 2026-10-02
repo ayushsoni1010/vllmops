@@ -32,18 +32,19 @@ sequenceDiagram
     M  ->> ML : log_params(model · api_base · prompt_template · prompt_chars · prompt_var.*)
     M  ->> ML : log_artifacts(prompts/)<br/>rendered.txt · variables.json · <name>.j2
 
-    M  ->> M  : t0 = time.monotonic(); output_chars = 0
-    M  ->> L  : llm.stream([HumanMessage(prompt)])<br/>X-Correlation-ID header forwarded to LiteLLM logs
+    M  ->> M  : t0 = time.monotonic(); output_chars = 0<br/>prompt_tokens = 0; completion_tokens = 0
+    M  ->> L  : llm.stream([HumanMessage(prompt)])<br/>stream_usage=True — backend returns token counts<br/>X-Correlation-ID header forwarded to LiteLLM logs
     L  ->> V  : forward to vLLM (primary) or Ollama (fallback)
 
     loop Token streaming
-        V  -->> L  : token chunk
-        L  -->> M  : token chunk
-        M  ->> M  : output_chars += len(chunk.content)
+        V  -->> L  : token chunk (+ usage_metadata on one chunk)
+        L  -->> M  : AIMessageChunk
+        M  ->> M  : output_chars += len(chunk.content)<br/>if chunk.usage_metadata → capture prompt/completion tokens
         M  -->> U  : print(chunk.content, end="", flush=True)
     end
 
-    M  ->> ML : log_metrics(latency_ms · output_chars)
+    M  ->> M  : latency_ms = (monotonic() - t0) * 1000<br/>cost_usd = compute_cost(prompt_tokens, completion_tokens)
+    M  ->> ML : log_metrics(latency_ms · output_chars · prompt_tokens · completion_tokens · cost_usd)
     ML -->> ML : openai_autolog flushes trace<br/>POST /api/3.0/mlflow/traces
     note over U,ML : Run visible at http://localhost:5000
 ```
@@ -69,7 +70,18 @@ This makes every run fully reproducible: re-render the logged template with the 
 | What is logged | Where | How |
 |---|---|---|
 | `model`, `api_base`, `prompt_template`, `prompt_chars`, `prompt_var.*` | MLflow params | `mlflow.log_params()` |
-| `latency_ms`, `output_chars` | MLflow metrics | `mlflow.log_metrics()` |
+| `latency_ms`, `output_chars`, `prompt_tokens`, `completion_tokens`, `cost_usd` | MLflow metrics | `mlflow.log_metrics()` |
 | `mlflow.user`, `user.email`, `env`, `app.version`, `run.correlation_id` | MLflow tags | `mlflow.set_tags()` |
 | Template source, rendered prompt, variables | MLflow artifacts (`prompts/`) | `mlflow.log_artifacts()` |
 | Full trace (inputs · outputs · spans) | MLflow Traces tab | `openai_autolog()` |
+
+## Cost tracking
+
+`prompt_tokens` and `completion_tokens` are captured from `AIMessageChunk.usage_metadata` during streaming — enabled by `stream_usage=True` on `ChatOpenAI`. `cost_usd` is computed by `cost.compute_cost()` using configurable per-token USD rates:
+
+| Env var | Default | Purpose |
+|---|---|---|
+| `PROMPT_TOKEN_COST` | `0.0` | USD per prompt token |
+| `COMPLETION_TOKEN_COST` | `0.0` | USD per completion token |
+
+Defaults to `0.0` for self-hosted inference (no cloud billing). Set to equivalent cloud pricing for cost attribution across teams or experiments.
