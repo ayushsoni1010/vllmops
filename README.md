@@ -214,6 +214,34 @@ vllmops/
 └── ARCHITECTURE.md
 ```
 
+## Human Feedback
+
+After each streamed response the CLI prompts for a label if stdin is a terminal:
+
+```
+Feedback [g=good  b=bad  Enter=skip]:
+```
+
+The label is logged to the same MLflow run as a `feedback` metric (`1.0` = good, `0.0` = bad) and a `feedback_label` tag. Skip the prompt in CI or batch runs by setting `FEEDBACK`:
+
+```bash
+FEEDBACK=good uv run llmops   # non-interactive, logs immediately
+FEEDBACK=bad  uv run llmops
+# no FEEDBACK + non-TTY → silent no-op
+```
+
+Export all labelled runs as a DPO dataset:
+
+```python
+import mlflow
+labelled = mlflow.search_runs(
+    experiment_names=["vllmops"],
+    filter_string="metrics.feedback >= 0",
+)
+# each row: run_id · params (model, template, vars) · metrics (feedback, latency_ms, …)
+# artifacts: prompts/rendered.txt (prompt) + MLflow trace (response)
+```
+
 ## Model Registry
 
 Track vLLM serving configurations (base model + quantization + adapter) as versioned entries in the MLflow Model Registry. This is a **config catalog**, not a model store — vLLM owns the weights; MLflow tracks provenance and promotes variants via aliases.

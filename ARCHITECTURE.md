@@ -15,7 +15,8 @@ Diagrams directory: [`docs/diagrams/`](docs/diagrams/)
 ```mermaid
 graph TB
     Client["🌐 Client\n(curl / SDK / app)"]
-    CLI["💻 Python CLI\nuv run llmops"]
+    CLI["💻 uv run llmops\ninference · cost · feedback"]
+    Register["📦 uv run llmops-register\nserving config catalog"]
 
     subgraph docker["Docker Stack"]
         subgraph pub["public network"]
@@ -28,7 +29,7 @@ graph TB
             postgres["PostgreSQL\nkeys + usage logs"]
             prometheus["Prometheus :9090"]
             grafana["Grafana :3000"]
-            mlflow["MLflow :5000\nopenai autolog · traces · metrics"]
+            mlflow["MLflow :5000\ntraces · metrics · feedback\nmodel registry · eval experiments"]
         end
     end
 
@@ -47,6 +48,7 @@ graph TB
     grafana --> prometheus
     CLI --> litellm
     CLI --> mlflow
+    Register --> mlflow
 
     style pub fill:#e8f4fd,stroke:#3498db
     style int fill:#eafaf1,stroke:#27ae60
@@ -129,15 +131,18 @@ sequenceDiagram
     C  ->> C  : load_dotenv() at module level
     C  ->> ML : openai_autolog() — patches openai SDK
     C  ->> C  : correlation_id = uuid4()
-    C  ->> B  : build_llm(extra_headers={"X-Correlation-ID": correlation_id})
+    C  ->> B  : build_llm(extra_headers={X-Correlation-ID}, stream_usage=True)
     B  -->> C : ChatOpenAI(base_url=VLLM_API_BASE)
     C  ->> C  : render(PROMPT_TEMPLATE, PROMPT_VAR_*) → prompt
     C  ->> ML : start_run() · set_tags() · log_params() · log_artifacts(prompts/)
     C  ->> L  : llm.stream([HumanMessage(prompt)])
     loop Token streaming
-        L  -->> U : print(chunk.content, end="", flush=True)
+        L  -->> C  : AIMessageChunk (usage_metadata on one chunk)
+        C  ->> C  : output_chars++ · capture prompt/completion tokens
+        C  -->> U : print(chunk.content, flush=True)
     end
-    C  ->> ML : log_metrics(latency_ms · output_chars)
+    C  ->> ML : log_metrics(latency_ms · output_chars · prompt_tokens · completion_tokens · cost_usd)
+    C  ->> ML : feedback.collect() → log_metric(feedback) · set_tag(feedback_label)
     C  ->> ML : openai_autolog flushes trace → /api/3.0/mlflow/traces
 ```
 
