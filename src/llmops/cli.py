@@ -11,7 +11,7 @@ import mlflow
 from langchain_core.messages import HumanMessage
 from mlflow.openai import autolog as openai_autolog
 
-from llmops import cost, prompts
+from llmops import cost, feedback, prompts
 from llmops.client import build_llm
 
 
@@ -74,3 +74,4 @@ def main() -> None:
                 "cost_usd": cost.compute_cost(prompt_tokens, completion_tokens),
             }
         )
+        feedback.collect()
