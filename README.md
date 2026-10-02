@@ -141,6 +141,8 @@ Copy `.env.example` to `.env` and fill in:
 | `PROMPT_TEMPLATE` | CLI | Template name in `prompts/` (default `"default"`) |
 | `PROMPT_VAR_*` | CLI | Variables injected into the template (e.g. `PROMPT_VAR_TOPIC=LLMOps`) |
 | `PROMPTS_DIR` | CLI | Override path to the prompts directory (default `./prompts`) |
+| `PROMPT_TOKEN_COST` | CLI | USD per prompt token for `cost_usd` metric (default `0.0`) |
+| `COMPLETION_TOKEN_COST` | CLI | USD per completion token for `cost_usd` metric (default `0.0`) |
 
 ## Local Dev (Mac, no GPU)
 
@@ -179,8 +181,9 @@ curl -X POST http://localhost:4000/key/generate \
 vllmops/
 ├── src/llmops/
 │   ├── __init__.py          # package re-export
-│   ├── cli.py               # main() — renders prompt, autologs MLflow, streams response
-│   ├── client.py            # build_llm() — ChatOpenAI pointed at LiteLLM
+│   ├── cli.py               # main() — renders prompt, autologs MLflow, streams response, logs cost metrics
+│   ├── client.py            # build_llm() — ChatOpenAI pointed at LiteLLM (stream_usage=True)
+│   ├── cost.py              # compute_cost() — prompt/completion token rates → cost_usd
 │   └── prompts.py           # collect_vars(), render(), log_artifacts() — Jinja2 templates
 ├── prompts/
 │   └── default.j2           # default prompt template (PROMPT_VAR_* injected at render time)

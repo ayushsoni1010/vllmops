@@ -30,8 +30,9 @@ docker compose ps                    # check health status
 ```
 src/llmops/
   __init__.py    re-exports main — touch only if adding public API
-  cli.py         load_dotenv() at module level; main(): set_experiment → openai_autolog → collect_vars/render → uuid4 correlation_id → build_llm → start_run → set_tags → log_params → log_artifacts(prompts/) → stream → log_metrics
-  client.py      build_llm(): ChatOpenAI pointed at VLLM_API_BASE
+  cli.py         load_dotenv() at module level; main(): set_experiment → openai_autolog → collect_vars/render → uuid4 correlation_id → build_llm → start_run → set_tags → log_params → log_artifacts(prompts/) → stream → log_metrics(latency_ms, output_chars, prompt_tokens, completion_tokens, cost_usd)
+  client.py      build_llm(): ChatOpenAI pointed at VLLM_API_BASE; stream_usage=True requests token counts from backend
+  cost.py        compute_cost(prompt_tokens, completion_tokens): PROMPT_TOKEN_COST + COMPLETION_TOKEN_COST rates → cost_usd
   prompts.py     collect_vars(), render(), log_artifacts() — Jinja2 template loading and MLflow artifact logging
 
 prompts/               versioned Jinja2 prompt templates (.j2 files)
@@ -68,6 +69,8 @@ All required vars are in `.env`. The pattern is fail-loud (`os.environ["KEY"]` n
 - `PROMPT_TEMPLATE` — name of the template file in `prompts/` without `.j2` (optional; default `"default"`)
 - `PROMPT_VAR_*` — variables injected into the Jinja2 template at render time (e.g. `PROMPT_VAR_TOPIC=LLMOps`); collected automatically by prefix scan
 - `PROMPTS_DIR` — override path to the prompts directory (optional; default `./prompts` relative to CWD)
+- `PROMPT_TOKEN_COST` — USD per prompt token for `cost_usd` metric (optional; default `0.0` — self-hosted has no market rate)
+- `COMPLETION_TOKEN_COST` — USD per completion token for `cost_usd` metric (optional; default `0.0`)
 
 ## Conventions
 

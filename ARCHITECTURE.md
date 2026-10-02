@@ -246,7 +246,7 @@ graph LR
 - Generates a `uuid4` correlation ID per run — set as `run.correlation_id` MLflow tag and forwarded as `X-Correlation-ID` header, linking the MLflow run to LiteLLM/nginx access logs
 - Tags every run with: `mlflow.user` (RUN_USER), `user.email` (RUN_EMAIL), `env` (APP_ENV), `app.version`, `run.correlation_id`, and optionally `git.commit` (GIT_COMMIT, CI only)
 - Logs params: `model`, `api_base`, `prompt_template`, `prompt_chars`, `prompt_var.*` (one param per template variable)
-- Logs metrics: `latency_ms`, `output_chars` (running counter, no buffering)
+- Logs metrics: `latency_ms`, `output_chars`, `prompt_tokens`, `completion_tokens`, `cost_usd` (computed from `PROMPT_TOKEN_COST` + `COMPLETION_TOKEN_COST` rates; defaults to `0.0` for self-hosted inference)
 - Logs artifacts under `prompts/`: `rendered.txt`, `variables.json`, `<name>.j2` (template source)
 
 ### Eval Harness (`uv run pytest tests/evals/`)
