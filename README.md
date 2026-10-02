@@ -143,6 +143,7 @@ Copy `.env.example` to `.env` and fill in:
 | `PROMPTS_DIR` | CLI | Override path to the prompts directory (default `./prompts`) |
 | `PROMPT_TOKEN_COST` | CLI | USD per prompt token for `cost_usd` metric (default `0.0`) |
 | `COMPLETION_TOKEN_COST` | CLI | USD per completion token for `cost_usd` metric (default `0.0`) |
+| `FEEDBACK` | CLI | Human label for the run: `good` or `bad`; omit for interactive TTY prompt |
 | `MLFLOW_REGISTER_MODEL` | Registry | Registered model name (e.g. `qwen3-4b-awq`); required for `llmops-register` |
 | `MODEL_QUANTIZATION` | Registry | Declared quantization variant (e.g. `awq`, `gptq`); stored as metadata |
 | `MODEL_ADAPTER` | Registry | Declared LoRA adapter path or HF hub name; stored as metadata |
@@ -188,6 +189,7 @@ vllmops/
 │   ├── cli.py               # main() — renders prompt, autologs MLflow, streams response, logs cost metrics
 │   ├── client.py            # build_llm() — ChatOpenAI pointed at LiteLLM (stream_usage=True)
 │   ├── cost.py              # compute_cost() — prompt/completion token rates → cost_usd
+│   ├── feedback.py          # collect() — interactive or env-var feedback → MLflow metric + tag
 │   ├── prompts.py           # collect_vars(), render(), log_artifacts() — Jinja2 templates
 │   └── registry.py          # register() — vLLM serving config → MLflow model version + alias
 ├── prompts/

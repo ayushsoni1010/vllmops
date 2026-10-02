@@ -248,6 +248,15 @@ graph LR
 - Logs params: `model`, `api_base`, `prompt_template`, `prompt_chars`, `prompt_var.*` (one param per template variable)
 - Logs metrics: `latency_ms`, `output_chars`, `prompt_tokens`, `completion_tokens`, `cost_usd` (computed from `PROMPT_TOKEN_COST` + `COMPLETION_TOKEN_COST` rates; defaults to `0.0` for self-hosted inference)
 - Logs artifacts under `prompts/`: `rendered.txt`, `variables.json`, `<name>.j2` (template source)
+- After streaming, calls `feedback.collect()` — prompts interactively if stdin is a TTY; `FEEDBACK=good|bad` env var bypasses the prompt for CI/scripting; no-op if neither is set
+
+### Human Feedback (`feedback.py`)
+- `feedback.collect()` runs at the end of every CLI inference run, still inside the active MLflow run context
+- TTY path: prints `Feedback [g=good  b=bad  Enter=skip]:` after the streamed response; reads one line from stdin
+- Env-var path: `FEEDBACK=good|bad` logs immediately without prompting — for CI, batch evaluation, or scripted pipelines
+- Non-TTY with no `FEEDBACK` set: silent no-op (piped output, background jobs)
+- Logs `feedback` metric (`1.0` = good, `0.0` = bad) and `feedback_label` tag on the run
+- DPO/RLHF dataset export: `mlflow.search_runs(filter_string="metrics.feedback >= 0")` returns all labelled runs with full prompt artifacts and traces
 
 ### Model Registry (`uv run llmops-register`)
 - Config-catalog pattern: each registered model version records a `serving_config.json` (base model + quantization + adapter) linked to a dedicated MLflow run in the `vllmops-registry` experiment

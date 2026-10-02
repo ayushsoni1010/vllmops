@@ -45,6 +45,17 @@ sequenceDiagram
 
     M  ->> M  : latency_ms = (monotonic() - t0) * 1000<br/>cost_usd = compute_cost(prompt_tokens, completion_tokens)
     M  ->> ML : log_metrics(latency_ms · output_chars · prompt_tokens · completion_tokens · cost_usd)
+
+    alt FEEDBACK env var set (good / bad)
+        M  ->> ML : log_metric("feedback", 1.0 or 0.0)<br/>set_tag("feedback_label", "good" or "bad")
+    else stdin is a TTY (interactive terminal)
+        M  -->> U : prompt — "Feedback [g=good  b=bad  Enter=skip]: "
+        U  ->> M  : keypress
+        M  ->> ML : log_metric + set_tag (or no-op on skip)
+    else non-TTY / no FEEDBACK (CI, piped output)
+        note over M : silent no-op
+    end
+
     ML -->> ML : openai_autolog flushes trace<br/>POST /api/3.0/mlflow/traces
     note over U,ML : Run visible at http://localhost:5000
 ```
@@ -71,9 +82,28 @@ This makes every run fully reproducible: re-render the logged template with the 
 |---|---|---|
 | `model`, `api_base`, `prompt_template`, `prompt_chars`, `prompt_var.*` | MLflow params | `mlflow.log_params()` |
 | `latency_ms`, `output_chars`, `prompt_tokens`, `completion_tokens`, `cost_usd` | MLflow metrics | `mlflow.log_metrics()` |
+| `feedback` (`1.0`=good, `0.0`=bad) | MLflow metric | `feedback.collect()` |
 | `mlflow.user`, `user.email`, `env`, `app.version`, `run.correlation_id` | MLflow tags | `mlflow.set_tags()` |
+| `feedback_label` (`"good"` or `"bad"`) | MLflow tag | `feedback.collect()` |
 | Template source, rendered prompt, variables | MLflow artifacts (`prompts/`) | `mlflow.log_artifacts()` |
 | Full trace (inputs · outputs · spans) | MLflow Traces tab | `openai_autolog()` |
+
+## Human feedback and DPO dataset
+
+After the streamed response, `feedback.collect()` runs inside the still-active MLflow run:
+
+- **Interactive terminal** — prints `Feedback [g=good  b=bad  Enter=skip]:` and reads one line
+- **`FEEDBACK=good|bad` env var** — logs without prompting (CI, batch, scripting)
+- **Non-TTY, no env var** — silent no-op
+
+Each labelled run is a complete DPO training record: prompt (artifact), response (trace), label (metric). Export with:
+
+```python
+labelled = mlflow.search_runs(
+    experiment_names=["vllmops"],
+    filter_string="metrics.feedback >= 0",
+)
+```
 
 ## Cost tracking
 

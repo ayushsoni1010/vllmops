@@ -37,6 +37,7 @@ src/llmops/
   cost.py        compute_cost(prompt_tokens, completion_tokens): PROMPT_TOKEN_COST + COMPLETION_TOKEN_COST rates → cost_usd
   prompts.py     collect_vars(), render(), log_artifacts() — Jinja2 template loading and MLflow artifact logging
   registry.py    register(): standalone entry point — creates vllmops-registry MLflow run, logs serving_config.json, registers model version, optionally sets alias
+  feedback.py    collect(): called after every inference run — logs feedback metric (1.0=good/0.0=bad) and feedback_label tag to the active run; interactive prompt when TTY, env-var override for CI
 
 prompts/               versioned Jinja2 prompt templates (.j2 files)
   default.j2           default template; variables injected from PROMPT_VAR_* env vars
@@ -74,6 +75,7 @@ All required vars are in `.env`. The pattern is fail-loud (`os.environ["KEY"]` n
 - `PROMPTS_DIR` — override path to the prompts directory (optional; default `./prompts` relative to CWD)
 - `PROMPT_TOKEN_COST` — USD per prompt token for `cost_usd` metric (optional; default `0.0` — self-hosted has no market rate)
 - `COMPLETION_TOKEN_COST` — USD per completion token for `cost_usd` metric (optional; default `0.0`)
+- `FEEDBACK` — human label for the current run: `good` or `bad` (optional; if unset and stdin is a TTY, the CLI prompts interactively after streaming; non-TTY/CI with no value = no-op)
 - `MLFLOW_REGISTER_MODEL` — registered model name for `llmops-register` (required when running that command; e.g. `"qwen3-4b-awq"`)
 - `MODEL_QUANTIZATION` — declared quantization variant (optional; e.g. `"awq"`, `"gptq"`, `"fp16"`) — stored as metadata, not validated against vLLM
 - `MODEL_ADAPTER` — declared LoRA adapter path or HF hub name (optional) — stored as metadata
@@ -114,5 +116,6 @@ All required vars are in `.env`. The pattern is fail-loud (`os.environ["KEY"]` n
 - Do not commit `mlruns.db` or `mlruns/` — both are gitignored; they are bind-mounted into the MLflow container
 - Do not add `addopts = "-m 'not eval'"` to `[tool.pytest.ini_options]` — it silently deselects all cases when running `uv run pytest tests/evals/`
 - Do not tighten eval patterns for the fallback backend (tinyllama hallucinates freely); keep patterns broad enough to survive creative paraphrasing
+- Do not set `FEEDBACK=good` permanently in `.env` — it would stamp every run as good regardless of output quality; leave it commented out and set it per-run
 - Do not call `registry.register()` from inside the inference CLI — registration is a deliberate per-variant operation, not a per-prompt side-effect; run `llmops-register` explicitly when you have a new adapter or quantization variant
 - Do not expect `mlflow.pyfunc.load_model()` to work on registered versions — the registry is a config catalog, not a model store; weights live in vLLM
