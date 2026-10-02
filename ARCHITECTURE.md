@@ -245,8 +245,17 @@ graph LR
 - Always uses `ChatOpenAI` pointed at `VLLM_API_BASE` (LiteLLM gateway); Ollama fallback is handled inside LiteLLM
 - Generates a `uuid4` correlation ID per run — set as `run.correlation_id` MLflow tag and forwarded as `X-Correlation-ID` header, linking the MLflow run to LiteLLM/nginx access logs
 - Tags every run with: `mlflow.user` (RUN_USER), `user.email` (RUN_EMAIL), `env` (APP_ENV), `app.version`, `run.correlation_id`, and optionally `git.commit` (GIT_COMMIT, CI only)
-- Logs params: `model`, `api_base`, `prompt_chars`
+- Logs params: `model`, `api_base`, `prompt_template`, `prompt_chars`, `prompt_var.*` (one param per template variable)
 - Logs metrics: `latency_ms`, `output_chars` (running counter, no buffering)
+- Logs artifacts under `prompts/`: `rendered.txt`, `variables.json`, `<name>.j2` (template source)
+
+### Eval Harness (`uv run pytest tests/evals/`)
+- Pattern-based golden regression suite; validates output quality against `expected_patterns` (Python `re.search`)
+- Cases defined in `tests/evals/fixtures/golden.yaml` as data — add cases without touching Python
+- Each case creates its own `mlflow.start_run()` in the `vllmops-evals` experiment; logs `latency_ms`, `output_chars`, `passed` metric, `output.txt`, and prompt artifacts
+- Uses `.invoke()` (not `.stream()`) — tests need the full output to assert patterns
+- `max_latency_ms` per case acts as a latency regression gate; default 60 s is generous for the Ollama fallback
+- `mlflow.evaluate()` is the next layer: aggregate scoring with an LLM-as-judge once a judge model is configured
 
 ---
 

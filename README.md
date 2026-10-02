@@ -179,8 +179,15 @@ curl -X POST http://localhost:4000/key/generate \
 vllmops/
 ├── src/llmops/
 │   ├── __init__.py          # package re-export
-│   ├── cli.py               # main() — loads env, autologs MLflow, streams response
-│   └── client.py            # build_llm() — ChatOpenAI pointed at LiteLLM
+│   ├── cli.py               # main() — renders prompt, autologs MLflow, streams response
+│   ├── client.py            # build_llm() — ChatOpenAI pointed at LiteLLM
+│   └── prompts.py           # collect_vars(), render(), log_artifacts() — Jinja2 templates
+├── prompts/
+│   └── default.j2           # default prompt template (PROMPT_VAR_* injected at render time)
+├── tests/evals/
+│   ├── conftest.py          # llm fixture, vllmops-evals MLflow experiment
+│   ├── fixtures/golden.yaml # eval cases: template + variables + patterns + latency bound
+│   └── test_golden.py       # parametrized pytest — pattern assertions + MLflow logging
 ├── litellm/
 │   └── config.yaml          # model registry, routing, fallback, caching config
 ├── nginx/
@@ -191,10 +198,35 @@ vllmops/
 │   ├── dashboards/          # provisioned dashboard JSON + provider config
 │   └── provisioning/datasources/  # Prometheus datasource
 ├── docker-compose.yml
+├── pyrightconfig.json       # points pyright at .venv for import resolution
 ├── pyproject.toml
 ├── .env.example
 └── ARCHITECTURE.md
 ```
+
+## Evaluation
+
+The golden eval harness validates model output quality against pattern-based assertions. Each case renders a prompt template, calls the model, checks the output, and logs results to the `vllmops-evals` MLflow experiment.
+
+```bash
+# Requires the Docker stack to be running (LiteLLM + MLflow)
+uv run pytest tests/evals/ -v
+```
+
+Add new cases by editing `tests/evals/fixtures/golden.yaml` — no Python changes needed:
+
+```yaml
+cases:
+  - id: my_new_case
+    template: default
+    variables:
+      topic: Kubernetes
+    expected_patterns:
+      - "(?i)(container|orchestration|deploy|cluster|pod)"
+    max_latency_ms: 60000
+```
+
+Each test run creates a separate MLflow run under `vllmops-evals` with `latency_ms`, `output_chars`, `passed` metric, `output.txt`, and the rendered prompt artifacts for full reproducibility.
 
 ## Stopping the Stack
 
