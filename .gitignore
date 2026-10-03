@@ -12,6 +12,16 @@ wheels/
 # Environment variables
 .env
 
+# Tool caches
+.pytest_cache/
+.ruff_cache/
+
+# macOS metadata
+.DS_Store
+
+# Claude Code local settings (machine-specific)
+.claude/settings.local.json
+
 # MLflow local tracking (use the containerised server instead)
 mlflow.db
 mlflow.db-shm
