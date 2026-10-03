@@ -28,6 +28,7 @@ graph TB
             redis["Redis\ncache + rate-limit"]
             postgres["PostgreSQL\nkeys + usage logs"]
             prometheus["Prometheus :9090"]
+            alertmanager["Alertmanager :9093\nalert routing · null receiver"]
             grafana["Grafana :3000"]
             mlflow["MLflow :5000\ntraces · metrics · feedback\nmodel registry · eval experiments"]
         end
@@ -45,6 +46,7 @@ graph TB
     litellm <--> postgres
     prometheus --> vllm
     prometheus --> litellm
+    prometheus --> alertmanager
     grafana --> prometheus
     CLI --> litellm
     CLI --> mlflow
@@ -187,6 +189,7 @@ graph LR
 | Prometheus | `127.0.0.1:9090` | Host ops browser only |
 | Grafana | `127.0.0.1:3000` | Host ops browser only |
 | MLflow | `127.0.0.1:5000` | Host ops browser only |
+| Alertmanager | `127.0.0.1:9093` | Host ops browser only |
 | vLLM | *none* | LiteLLM only (internal) |
 | Redis | *none* | LiteLLM only (internal) |
 | PostgreSQL | *none* | LiteLLM only (internal) |
@@ -232,7 +235,13 @@ graph LR
 - Scrapes vLLM at `vllm:8000/metrics` every 5 s
 - Scrapes LiteLLM at `litellm:4000/metrics` every 5 s
 - Evaluates alert rules from `prometheus/alerts.yml` every 30 s
+- Fires active alerts to Alertmanager at `alertmanager:9093`
 - `scrape_timeout: 4s < scrape_interval: 5s` (Prometheus requirement)
+
+### Alertmanager — Alert Routing
+- Receives firing alerts from Prometheus; ships with a `null` receiver (silent acknowledgement)
+- Add email / Slack / PagerDuty routes in `alertmanager/alertmanager.yml` — no code changes needed
+- Groups, deduplicates, and throttles alerts: `group_wait: 30s`, `group_interval: 5m`, `repeat_interval: 4h`
 
 ### Grafana — Dashboards
 - Queries Prometheus for both vLLM and LiteLLM metrics
@@ -312,6 +321,7 @@ model_list:
 | Redis | 768 MB | 0.5 cores | Internally limited to 512 MB (LRU eviction) |
 | Grafana | 512 MB | 0.5 cores | |
 | MLflow | 1 GB | 1 core | 3.x starts at ~750 MB; 512 MB causes OOM restarts |
+| Alertmanager | 256 MB | 0.5 cores | |
 
 ---
 

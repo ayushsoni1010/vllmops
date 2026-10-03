@@ -34,9 +34,10 @@ Clients (any OpenAI-compatible SDK / REST)
    └──────────────┘        └───────────┘
 
 Observability  (localhost-only ports)
-   Prometheus  :9090  →  scrapes vllm + litellm
-   Grafana     :3000  →  dashboards
-   MLflow      :5000  →  experiment tracking (CLI)
+   Prometheus    :9090  →  scrapes vllm + litellm · evaluates alert rules
+   Alertmanager  :9093  →  receives alerts from Prometheus · routes notifications
+   Grafana       :3000  →  dashboards
+   MLflow        :5000  →  experiment tracking (CLI)
 ```
 
 ## Prerequisites
@@ -111,6 +112,7 @@ Requires the Docker stack to be running (for LiteLLM at `:4000` and MLflow at `:
 | nginx | `0.0.0.0:80` | Public API entry point |
 | LiteLLM | `127.0.0.1:4000` | Gateway UI + virtual key management |
 | Prometheus | `127.0.0.1:9090` | Metrics browser |
+| Alertmanager | `127.0.0.1:9093` | Alert routing UI — configure notification targets in `alertmanager/alertmanager.yml` |
 | Grafana | `127.0.0.1:3000` | Dashboards |
 | MLflow | `127.0.0.1:5000` | Experiment tracking UI |
 | vLLM | none | Internal only — reachable via LiteLLM |
