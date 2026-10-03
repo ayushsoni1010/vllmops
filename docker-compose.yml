@@ -163,6 +163,29 @@ services:
       - internal
     restart: unless-stopped
 
+  # ── Alertmanager ─────────────────────────────────────────────────────────────
+  # Receives firing alerts from Prometheus and routes them to notification
+  # targets (email, Slack, PagerDuty). Ships with a null receiver by default —
+  # edit alertmanager/alertmanager.yml to add real notification routes.
+  alertmanager:
+    image: prom/alertmanager:v0.28.1
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    ports:
+      # Localhost-only: Alertmanager UI for ops, not exposed to LAN.
+      - "127.0.0.1:9093:9093"
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+          cpus: "0.5"
+    networks:
+      - internal
+    restart: unless-stopped
+
   # ── Prometheus ───────────────────────────────────────────────────────────────
   # Scrapes /metrics from both vLLM (TTFT, TPS, GPU util) and LiteLLM
   # (request counts, error rates, token usage, spend per key/model).
@@ -186,6 +209,8 @@ services:
           cpus: "1"
     networks:
       - internal
+    depends_on:
+      - alertmanager
     restart: unless-stopped
 
   # ── Grafana ──────────────────────────────────────────────────────────────────

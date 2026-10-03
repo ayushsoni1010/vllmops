@@ -1,0 +1,14 @@
+global:
+  resolve_timeout: 5m
+
+# Default route: all alerts go to the null receiver.
+# Add email/Slack/PagerDuty routes here when notification targets are known.
+route:
+  receiver: "null"
+  group_by: [alertname, severity]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: "null"

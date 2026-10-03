@@ -6,6 +6,11 @@ global:
 rule_files:
   - /etc/prometheus/alerts.yml
 
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
 scrape_configs:
   # vLLM inference engine — exposes TTFT, TPS, KV-cache, GPU util, etc.
   - job_name: "vllm"
