@@ -56,7 +56,10 @@ def main() -> None:
         output_chars = 0
         prompt_tokens = 0
         completion_tokens = 0
+        t_first_chunk: float | None = None
         for chunk in llm.stream([HumanMessage(content=prompt)]):
+            if t_first_chunk is None and chunk.content:
+                t_first_chunk = time.monotonic()
             print(chunk.content, end="", flush=True)
             output_chars += len(chunk.content)
             if meta := chunk.usage_metadata:
@@ -65,9 +68,11 @@ def main() -> None:
         print()
 
         latency_ms = (time.monotonic() - t0) * 1000
+        ttft_ms = (t_first_chunk - t0) * 1000 if t_first_chunk is not None else 0.0
         mlflow.log_metrics(
             {
                 "latency_ms": latency_ms,
+                "ttft_ms": ttft_ms,
                 "output_chars": output_chars,
                 "prompt_tokens": float(prompt_tokens),
                 "completion_tokens": float(completion_tokens),
