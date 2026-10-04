@@ -69,6 +69,7 @@ def main() -> None:
 
         latency_ms = (time.monotonic() - t0) * 1000
         ttft_ms = (t_first_chunk - t0) * 1000 if t_first_chunk is not None else 0.0
+        tokens_per_second = completion_tokens / (latency_ms / 1000) if latency_ms > 0 else 0.0
         mlflow.log_metrics(
             {
                 "latency_ms": latency_ms,
@@ -76,6 +77,7 @@ def main() -> None:
                 "output_chars": output_chars,
                 "prompt_tokens": float(prompt_tokens),
                 "completion_tokens": float(completion_tokens),
+                "tokens_per_second": tokens_per_second,
                 "cost_usd": cost.compute_cost(prompt_tokens, completion_tokens),
             }
         )
