@@ -43,8 +43,8 @@ sequenceDiagram
         M  -->> U  : print(chunk.content, end="", flush=True)
     end
 
-    M  ->> M  : latency_ms = (monotonic() - t0) * 1000<br/>cost_usd = compute_cost(prompt_tokens, completion_tokens)
-    M  ->> ML : log_metrics(latency_ms · output_chars · prompt_tokens · completion_tokens · cost_usd)
+    M  ->> M  : latency_ms = (monotonic() - t0) * 1000<br/>tokens_per_second = completion_tokens / (latency_ms / 1000)<br/>cost_usd = compute_cost(prompt_tokens, completion_tokens)
+    M  ->> ML : log_metrics(latency_ms · ttft_ms · output_chars · prompt_tokens · completion_tokens · tokens_per_second · cost_usd)
 
     alt FEEDBACK env var set (good / bad)
         M  ->> ML : log_metric("feedback", 1.0 or 0.0)<br/>set_tag("feedback_label", "good" or "bad")
@@ -81,7 +81,7 @@ This makes every run fully reproducible: re-render the logged template with the 
 | What is logged | Where | How |
 |---|---|---|
 | `model`, `api_base`, `prompt_template`, `prompt_chars`, `prompt_var.*` | MLflow params | `mlflow.log_params()` |
-| `latency_ms`, `output_chars`, `prompt_tokens`, `completion_tokens`, `cost_usd` | MLflow metrics | `mlflow.log_metrics()` |
+| `latency_ms`, `ttft_ms`, `output_chars`, `prompt_tokens`, `completion_tokens`, `tokens_per_second`, `cost_usd` | MLflow metrics | `mlflow.log_metrics()` |
 | `feedback` (`1.0`=good, `0.0`=bad) | MLflow metric | `feedback.collect()` |
 | `mlflow.user`, `user.email`, `env`, `app.version`, `run.correlation_id` | MLflow tags | `mlflow.set_tags()` |
 | `feedback_label` (`"good"` or `"bad"`) | MLflow tag | `feedback.collect()` |

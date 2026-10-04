@@ -143,7 +143,7 @@ sequenceDiagram
         C  ->> C  : output_chars++ · capture prompt/completion tokens
         C  -->> U : print(chunk.content, flush=True)
     end
-    C  ->> ML : log_metrics(latency_ms · output_chars · prompt_tokens · completion_tokens · cost_usd)
+    C  ->> ML : log_metrics(latency_ms · ttft_ms · output_chars · prompt_tokens · completion_tokens · tokens_per_second · cost_usd)
     C  ->> ML : feedback.collect() → log_metric(feedback) · set_tag(feedback_label)
     C  ->> ML : openai_autolog flushes trace → /api/3.0/mlflow/traces
 ```
@@ -260,7 +260,7 @@ graph LR
 - Generates a `uuid4` correlation ID per run — set as `run.correlation_id` MLflow tag and forwarded as `X-Correlation-ID` header, linking the MLflow run to LiteLLM/nginx access logs
 - Tags every run with: `mlflow.user` (RUN_USER), `user.email` (RUN_EMAIL), `env` (APP_ENV), `app.version`, `run.correlation_id`, and optionally `git.commit` (GIT_COMMIT, CI only)
 - Logs params: `model`, `api_base`, `prompt_template`, `prompt_chars`, `prompt_var.*` (one param per template variable)
-- Logs metrics: `latency_ms`, `output_chars`, `prompt_tokens`, `completion_tokens`, `cost_usd` (computed from `PROMPT_TOKEN_COST` + `COMPLETION_TOKEN_COST` rates; defaults to `0.0` for self-hosted inference)
+- Logs metrics: `latency_ms`, `ttft_ms`, `output_chars`, `prompt_tokens`, `completion_tokens`, `tokens_per_second` (completion_tokens / latency_s), `cost_usd` (computed from `PROMPT_TOKEN_COST` + `COMPLETION_TOKEN_COST` rates; defaults to `0.0` for self-hosted inference)
 - Logs artifacts under `prompts/`: `rendered.txt`, `variables.json`, `<name>.j2` (template source)
 - After streaming, calls `feedback.collect()` — prompts interactively if stdin is a TTY; `FEEDBACK=good|bad` env var bypasses the prompt for CI/scripting; no-op if neither is set
 
